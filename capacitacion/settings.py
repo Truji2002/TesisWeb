@@ -2,6 +2,18 @@
 from pathlib import Path
 from datetime import timedelta
 from drf_yasg import openapi
+import os
+from dotenv import load_dotenv
+
+# Cargar las variables del archivo .env
+load_dotenv()
+
+# Configuración de correo electrónico
+EMAIL_HOST = os.getenv('EMAIL_HOST')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS') == 'True'
 
 
 
@@ -18,7 +30,7 @@ SECRET_KEY = 'django-insecure-@l*mlpq!__0^joth+#_&3+#__4iigxwl#b2g12bmpayf4$njr#
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -160,7 +172,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'es'
 
 TIME_ZONE = 'UTC'
 
@@ -187,12 +199,13 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 
 
-CORS_ALLOW_ALL_ORIGINS = True
+
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # Origen del frontend
+    "http://192.168.1.47:8000",
 ]
-
+CORS_ALLOW_ALL_ORIGINS = True
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 #AUTHENTICATION_BACKENDS = ['globalqhse.authentication.EmailBackend', 'django.contrib.auth.backends.ModelBackend']

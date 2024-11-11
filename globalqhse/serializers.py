@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Cliente
+from .models import Usuario, Administrador, Instructor, Cliente, Simulacion, Curso, Subcurso, Modulo
 from django.contrib.auth import authenticate
 
 
@@ -47,7 +47,11 @@ class ClienteSerializer(serializers.ModelSerializer):
         model = Cliente
         fields = ['first_name','last_name', 'email', 'password', 'empresa', 'codigoOrganizacion', 'asignadoSimulacion']
         extra_kwargs = {'password': {'write_only': True}}
-
+    def validate_email(self, value):
+        
+        if Cliente.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Este correo electrónico ya está registrado.")
+        return value
     def create(self, validated_data):
         user = Cliente(**validated_data)
         user.set_password(validated_data['password'])
@@ -86,3 +90,25 @@ class ClienteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Cliente
         fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion', 'codigoOrganizacion','empresa']  
+
+
+class SimulacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Simulacion
+        fields = '__all__'
+
+
+class CursoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Curso
+        fields = '__all__'
+
+class SubcursoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subcurso
+        fields = '__all__'
+
+class ModuloSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Modulo
+        fields = '__all__'

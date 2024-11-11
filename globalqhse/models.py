@@ -8,7 +8,7 @@ import random
 import string
 from django.contrib.auth.hashers import make_password
 import secrets
-#from model_utils.managers import InheritanceManager
+
 
 
 
@@ -16,12 +16,13 @@ import secrets
 
 class Usuario(AbstractUser):
      
-   
+    username = models.CharField(max_length=150, unique=False, blank=True, null=True)
     email = models.EmailField(unique=True)  
     empresa = models.CharField(max_length=100)
-    codigoOrganizacion = models.CharField(max_length=100, blank=True, editable=False)
+    codigoOrganizacion = models.CharField(max_length=100, blank=True)
+    
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name','password']
+    REQUIRED_FIELDS = ['first_name', 'last_name','password','empresa','codigoOrganizacion']
     
     
 
@@ -48,10 +49,6 @@ class Usuario(AbstractUser):
 
     def clean(self):
         
-        if Usuario.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exclude(pk=self.pk).exists():
-            raise ValidationError({'codigoOrganizacion': "Este código de organización ya está en uso."})
-        if Usuario.objects.filter(empresa=self.empresa).exclude(pk=self.pk).exists():
-            raise ValidationError({'empresa': "El nombre de empresa ya está registrado."})
         if Usuario.objects.filter(email=self.email).exclude(pk=self.pk).exists():
             raise ValidationError({'email': 'Este correo electrónico ya está en uso.'})
 
@@ -154,13 +151,13 @@ class Simulacion(models.Model):
         return f"Simulación programada para {self.fecha} - {'Activa' if self.estado else 'Inactiva'}"
     
 class Curso(models.Model):
-    titulo = models.CharField(max_length=200,null=True)
+    titulo = models.CharField(max_length=200, null=True)
     descripcion = models.TextField(null=True)
+    imagen=models.ImageField(upload_to='documents/', null=True)
 
     def __str__(self):
         return self.titulo
-    
-            
+
     class Meta:
         verbose_name = "Curso"
         verbose_name_plural = "Cursos"
@@ -168,13 +165,14 @@ class Curso(models.Model):
 class Subcurso(models.Model):
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name='subcursos')
     nombre = models.CharField(max_length=200)
-    cantidad_modulos =  models.IntegerField(default=0)
+    cantidad_modulos = models.IntegerField(default=0)
     progreso = models.FloatField(default=0)
 
     def __str__(self):
         return f"{self.nombre} ({self.curso.titulo})"
     
     def actualizar_progreso(self):
+        """Actualiza el progreso en porcentaje basado en módulos completados."""
         total_modulos = self.modulos.count()
         modulos_completados = self.modulos.filter(completado=True).count()
         if total_modulos > 0:
@@ -188,7 +186,7 @@ class Subcurso(models.Model):
         verbose_name_plural = "Subcursos"
 
 class Progreso(models.Model):
-    cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE)
+    cliente = models.ForeignKey('Cliente', on_delete=models.CASCADE)
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE)
     completado = models.BooleanField(default=False)
     porcentajeCompletado = models.FloatField()
@@ -198,22 +196,19 @@ class Progreso(models.Model):
         verbose_name_plural = "Progreso"
 
     def __str__(self):
-        return f"{self.cliente} - {self.curso.nombre}: {self.porcentajeCompletado}% completado"
+        return f"{self.cliente} - {self.curso.titulo}: {self.porcentajeCompletado}% completado"
 
-
-    
 class Certificado(models.Model):
     codigoCertificado = models.CharField(max_length=100)
-    estado = models.BooleanField(default=False)  # Inicialmente no emitido
+    estado = models.BooleanField(default=False)
     fechaEmision = models.DateField(auto_now_add=True)
     curso = models.ForeignKey(Curso, on_delete=models.SET_NULL, null=True, blank=True, related_name='certificados')
-    simulacion = models.ForeignKey(Simulacion, on_delete=models.SET_NULL, null=True, blank=True, related_name='certificados')
+    simulacion = models.ForeignKey('Simulacion', on_delete=models.SET_NULL, null=True, blank=True, related_name='certificados')
 
     def __str__(self):
         return f"Certificado {self.codigoCertificado} - {'Emitido' if self.estado else 'Pendiente'}"
 
     def verificar_emision(self):
-        """ Verifica si los criterios para la emisión del certificado han sido cumplidos. """
         if self.curso and self.curso_progreso_completado():
             self.estado = True
             self.save()
@@ -222,7 +217,6 @@ class Certificado(models.Model):
             self.save()
 
     def curso_progreso_completado(self):
-        """ Este método ficticio debería implementarse para comprobar si el curso está completamente completado. """
         progreso = Progreso.objects.filter(curso=self.curso).first()
         return progreso and progreso.completado
 
@@ -230,13 +224,12 @@ class Certificado(models.Model):
         verbose_name = "Certificado"
         verbose_name_plural = "Certificados"
 
-
 class Modulo(models.Model):
-    subcurso = models.ForeignKey(Subcurso, on_delete=models.CASCADE, related_name='modulos',null=True)
+    subcurso = models.ForeignKey(Subcurso, on_delete=models.CASCADE, related_name='modulos', null=True)
     nombre = models.CharField(max_length=100)
     descripcion = models.TextField(blank=True, null=True)
     enlace = models.URLField(max_length=500, blank=True, null=True, help_text="Enlace al contenido del módulo")
-    archivo = models.FileField(upload_to='documents/',blank=True, null=True)
+    archivo = models.FileField(upload_to='documents/', null=True)
     completado = models.BooleanField(default=False)
 
     class Meta:
@@ -285,3 +278,26 @@ class Pregunta(models.Model):
         return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres
 
 
+@receiver(post_save, sender=Modulo)
+def actualizar_cantidad_modulos_y_progreso(sender, instance, created, **kwargs):
+    subcurso = instance.subcurso
+    if created:
+        # Incrementar la cantidad de módulos cuando se crea un nuevo módulo
+        subcurso.cantidad_modulos += 1
+        subcurso.save()
+    # Actualizar el progreso en el subcurso
+    subcurso.actualizar_progreso()
+
+@receiver(post_delete, sender=Modulo)
+def disminuir_cantidad_modulos(sender, instance, **kwargs):
+    try:
+        subcurso = instance.subcurso
+        # Verifica si el subcurso aún existe antes de intentar modificarlo
+        if subcurso.cantidad_modulos > 0:
+            subcurso.cantidad_modulos -= 1
+            subcurso.save()
+        # Actualizar el progreso en el subcurso
+        subcurso.actualizar_progreso()
+    except Subcurso.DoesNotExist:
+        # El subcurso ya fue eliminado, así que no se hace nada
+        pass
