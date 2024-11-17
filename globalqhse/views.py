@@ -55,6 +55,18 @@ class InstructorViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminUser]
     #permission_classes = [IsAuthenticated] 
 
+    @action(detail=False, methods=['get'], url_path='activos')
+    def activos(self, request):
+        activos = self.queryset.filter(is_active=True)
+        serializer = self.get_serializer(activos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], url_path='inactivos')
+    def inactivos(self, request):
+        inactivos = self.queryset.filter(is_active=False)
+        serializer = self.get_serializer(inactivos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)  
         if serializer.is_valid():
@@ -72,6 +84,42 @@ class InstructorViewSet(viewsets.ModelViewSet):
             response_data['temp_password'] = temp_password  
             return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+    
+    def partial_update(self, request, pk=None):
+        try:
+        # Obtiene el instructor por su ID
+            instructor = Instructor.objects.get(pk=pk)
+
+            # Obtén todos los datos enviados
+            data = request.data
+
+            # Maneja el campo is_active específicamente
+            is_active = data.get('is_active')
+            if is_active is not None:
+                instructor.is_active = is_active
+
+                # Si se inactiva, actualiza los clientes relacionados
+            if is_active:
+                Cliente.objects.filter(codigoOrganizacion=instructor.codigoOrganizacion).update(is_active=True)
+            # Si el instructor se inactiva, también inactiva los clientes relacionados
+            else:
+                Cliente.objects.filter(codigoOrganizacion=instructor.codigoOrganizacion).update(is_active=False)
+
+            # Actualiza otros campos enviados en el cuerpo del PATCH
+            serializer = InstructorSerializer(instructor, data=data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(
+                    {"message": "Instructor actualizado correctamente.", "instructor": serializer.data},
+                    status=status.HTTP_200_OK,
+                )
+
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Instructor.DoesNotExist:
+            return Response({"error": "Instructor no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
 
 
@@ -124,6 +172,7 @@ class RegistroClienteAPIView(APIView):
 
 
 class LoginView(APIView):
+    permission_classes = [AllowAny]
     @swagger_auto_schema(
         operation_description="Inicia sesión y autentica a un usuario, devolviendo el tipo de usuario, sus detalles y un token JWT.",
         request_body=openapi.Schema(

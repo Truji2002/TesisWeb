@@ -25,7 +25,7 @@ class AdministradorSerializer(serializers.ModelSerializer):
 class InstructorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Instructor
-        fields = ['first_name','last_name', 'email', 'password','area', 'fechaInicioContrato', 'fechaFinContrato', 'empresa']
+        fields = ['id','first_name','last_name', 'email', 'password','area', 'fechaInicioContrato', 'fechaFinContrato', 'empresa','is_active']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -34,6 +34,8 @@ class InstructorSerializer(serializers.ModelSerializer):
         user.set_password(temp_password) 
         user.save()
         return user
+
+
 
 """""
 class InstructorReadSerializer(serializers.ModelSerializer):
@@ -84,7 +86,7 @@ class AdministradorDetailSerializer(LoginResponseSerializer):
 class InstructorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Instructor
-        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioContrato', 'fechaFinContrato', 'codigoOrganizacion','empresa']  
+        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioContrato', 'fechaFinContrato', 'codigoOrganizacion','empresa','is_active']  
 
 class ClienteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):

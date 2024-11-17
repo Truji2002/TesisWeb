@@ -92,6 +92,8 @@ class Instructor(Usuario):
             prefix = self.empresa[:3].upper()  
             suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5)) 
             self.codigoOrganizacion = f"{prefix}-{suffix}"
+            if not self.is_active:
+                Cliente.objects.filter(codigoOrganizacion=self.codigoOrganizacion).update(is_active=False)
         super().save(*args, **kwargs)
 
     def generar_contraseña_temporal(self):
@@ -99,6 +101,8 @@ class Instructor(Usuario):
         self.set_password(temp_password)  
         self.save()  
         return temp_password   
+    
+   
     
     class Meta:
         verbose_name = "Instructor"
