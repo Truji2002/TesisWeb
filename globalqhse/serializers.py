@@ -1,8 +1,11 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Cliente, Simulacion, Curso, Subcurso, Modulo
-from django.contrib.auth import authenticate
+from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa
 
 
+class EmpresaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Empresa
+        fields = '__all__'
 
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
@@ -13,7 +16,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
 class AdministradorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Administrador
-        fields = ['first_name','last_name', 'email', 'password', 'empresa', 'codigoOrganizacion']
+        fields = ['first_name','last_name', 'email', 'password', 'cargo']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -25,7 +28,7 @@ class AdministradorSerializer(serializers.ModelSerializer):
 class InstructorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Instructor
-        fields = ['id','first_name','last_name', 'email', 'password','area', 'fechaInicioContrato', 'fechaFinContrato', 'empresa','is_active']
+        fields = ['id','first_name','last_name', 'email', 'password','area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active']
         extra_kwargs = {'password': {'write_only': True}}
 
     def create(self, validated_data):
@@ -36,26 +39,18 @@ class InstructorSerializer(serializers.ModelSerializer):
         return user
 
 
-
-"""""
-class InstructorReadSerializer(serializers.ModelSerializer):
+class EstudaianteSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Instructor
-        fields = ['username', 'email', 'password', 'area', 'fechaInicioContrato', 'fechaFinContrato', 'empresa','codigoOrganizacion']
-        extra_kwargs = {'password': {'write_only': True}}   #ESTO DEFINE SI TRAE LA INFO O NO LA API O SEA LA CONTRASEÑA
-"""
-class ClienteSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Cliente
-        fields = ['first_name','last_name', 'email', 'password', 'empresa', 'codigoOrganizacion', 'asignadoSimulacion']
+        model = Estudiante
+        fields = ['first_name','last_name', 'email', 'password', 'asignadoSimulacion']
         extra_kwargs = {'password': {'write_only': True}}
     def validate_email(self, value):
         
-        if Cliente.objects.filter(email=value).exists():
+        if Estudiante.objects.filter(email=value).exists():
             raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
     def create(self, validated_data):
-        user = Cliente(**validated_data)
+        user = Estudiante(**validated_data)
         user.set_password(validated_data['password'])
         user.save()
         return user
@@ -66,7 +61,7 @@ class LoginResponseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = ['first_name','last_name', 'email', 'empresa', 'tipo_usuario']  
+        fields = ['first_name','last_name', 'email', 'tipo_usuario']  
 
     def get_tipo_usuario(self, obj):
 
@@ -74,24 +69,24 @@ class LoginResponseSerializer(serializers.ModelSerializer):
             return "Administrador"
         elif isinstance(obj, Instructor):
             return "Instructor"
-        elif isinstance(obj, Cliente):
-            return "Cliente"
+        elif isinstance(obj, Estudiante):
+            return "Estudiante"
         return "Usuario"
 
 class AdministradorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Administrador
-        fields = LoginResponseSerializer.Meta.fields + ['codigoOrganizacion', 'is_staff', 'is_superuser','empresa']  
+        fields = LoginResponseSerializer.Meta.fields + ['cargo', 'is_staff', 'is_superuser']  
 
 class InstructorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Instructor
-        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioContrato', 'fechaFinContrato', 'codigoOrganizacion','empresa','is_active']  
+        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active']  
 
 class ClienteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
-        model = Cliente
-        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion', 'codigoOrganizacion','empresa']  
+        model = Estudiante
+        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion']  
 
 
 class SimulacionSerializer(serializers.ModelSerializer):

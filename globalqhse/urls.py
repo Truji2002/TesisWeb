@@ -4,8 +4,8 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
 
-from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, ClienteViewSet, LoginView, Protected, RegistroClienteAPIView
-from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSet
+from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView, Protected, RegistroClienteAPIView
+from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
@@ -16,7 +16,8 @@ router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
 router.register(r'administradores', AdministradorViewSet)
 router.register(r'instructores', InstructorViewSet)
-router.register(r'clientes', ClienteViewSet)
+router.register(r'empresas', EmpresaViewSet)
+router.register(r'estudiantes', EstudianteViewSet)
 router.register(r'simulaciones',SimulacionViewSet)
 router.register(r'cursos',CursoViewSet)
 router.register(r'subcursos',SubcursoViewSet)

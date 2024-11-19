@@ -2,11 +2,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
-from .models import Usuario, Administrador, Instructor, Cliente, Simulacion, Curso, Subcurso, Modulo
+from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo,Empresa
 from rest_framework.views import APIView
-from .serializers import UsuarioSerializer, AdministradorSerializer, InstructorSerializer,ClienteSerializer, CursoSerializer
+from .serializers import UsuarioSerializer, AdministradorSerializer, InstructorSerializer,EstudaianteSerializer, CursoSerializer
 from .serializers import AdministradorDetailSerializer,InstructorDetailSerializer,ClienteDetailSerializer,LoginResponseSerializer
-from .serializers import SimulacionSerializer, SubcursoSerializer, ModuloSerializer
+from .serializers import SimulacionSerializer, SubcursoSerializer, ModuloSerializer, EmpresaSerializer
 from django.contrib.auth import authenticate
 from drf_yasg.utils import swagger_auto_schema
 from drf_yasg import openapi
@@ -21,7 +21,11 @@ from rest_framework.decorators import api_view
 from rest_framework.parsers import MultiPartParser, FormParser
 
 
-
+class EmpresaViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = Empresa.objects.all()
+    serializer_class = EmpresaSerializer
+    permission_classes = [IsAuthenticated]     
 
 class UsuarioViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
