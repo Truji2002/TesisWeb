@@ -7,14 +7,15 @@ from django.core.exceptions import ValidationError
 import random
 import string
 import secrets
+from django.db import transaction
 
 
 class Empresa(models.Model):
-    nombre = models.CharField(max_length=100)
+    nombre = models.CharField(max_length=100,unique=True)
     area = models.CharField(max_length=100)
     direccion = models.CharField(max_length=100)
     telefono = models.CharField(max_length=100)
-    correoElectronico = models.CharField(max_length=100)
+    correoElectronico = models.EmailField(unique=True)
     numeroEmpleados = models.IntegerField()
     class Meta:
         verbose_name = "Empresa"
@@ -26,10 +27,14 @@ class Empresa(models.Model):
         return self.instructores.count()
 
 class Usuario(AbstractUser):
-     
+    ROL_CHOICES = [
+        ('admin', 'Administrador'),
+        ('instructor', 'Instructor'),
+        ('estudiante', 'Estudiante'),
+    ]
     username = models.CharField(max_length=150, unique=False, blank=True, null=True)
     email = models.EmailField(unique=True)  
-    
+    rol = models.CharField(max_length=20, choices=ROL_CHOICES, default='estudiante')
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name','password']
     
@@ -78,6 +83,7 @@ class Administrador(Usuario):
     def save(self, *args, **kwargs):
         self.is_staff = True
         self.is_superuser = True
+        self.rol = 'admin'
         super().save(*args, **kwargs)
 
     def asignar_cursos_a_instructor(self, instructor_id, cursos_ids):
@@ -127,7 +133,7 @@ class Administrador(Usuario):
 
 class Instructor(Usuario):
     area = models.CharField(max_length=100)
-    codigoOrganizacion = models.CharField(max_length=100, blank=True)
+    codigoOrganizacion = models.CharField(max_length=100, blank=False,unique=True)
     fechaInicioCapacitacion = models.DateField()
     fechaFinCapacitacion = models.DateField()
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='instructores')
@@ -140,10 +146,12 @@ class Instructor(Usuario):
         return f"Instructor: {self.email} - Área: {self.area} - Empresa: {self.empresa.nombre}"
 
     def save(self, *args, **kwargs):
+        self.rol = 'instructor'
         if not self.codigoOrganizacion:
             prefix = self.empresa.nombre[:3].upper()
             suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
             self.codigoOrganizacion = f"{prefix}-{suffix}"
+            
         super().save(*args, **kwargs)
 
     def clean(self):
@@ -282,7 +290,7 @@ class Progreso(models.Model):
 
 class Estudiante(Usuario):
     asignadoSimulacion = models.BooleanField(default=False)
-    instructor = models.ForeignKey(Instructor, on_delete=models.CASCADE, related_name='estudiantes')
+    codigoOrganizacion = models.CharField(max_length=100, blank=False)
 
     class Meta:
         verbose_name = "Estudiante"
@@ -290,33 +298,48 @@ class Estudiante(Usuario):
 
     def __str__(self):
         estado_simulacion = "Con simulación" if self.asignadoSimulacion else "Sin simulación"
-        return f"Estudiante: {self.email} - {estado_simulacion} - Instructor: {self.instructor.email}"
+        return f"Estudiante: {self.email} - {estado_simulacion}"
 
     def save(self, *args, **kwargs):
-        
-        try:
-            instructor = Instructor.objects.get(codigoOrganizacion=self.codigoOrganizacion)
-            self.instructor = instructor
-        except Instructor.DoesNotExist:
+        self.rol = 'estudiante'
+        # Validar que el código de organización sea válido
+        if not Instructor.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exists():
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         super().save(*args, **kwargs)
 
+    @classmethod
+    def crear_estudiante_con_cursos(cls, email, password, codigoOrganizacion, **kwargs):
+        """
+        Crea un estudiante y lo inscribe automáticamente en los cursos de su instructor.
+        """
+        try:
+            # Verificar que el código de organización es válido
+            instructor = Instructor.objects.get(codigoOrganizacion=codigoOrganizacion)
 
-class Simulacion(models.Model):
-    curso = models.OneToOneField('Curso', on_delete=models.CASCADE, related_name='simulacion')
-    estado = models.BooleanField(default=False)
-    fecha = models.DateField()
+            # Crear el estudiante
+            with transaction.atomic():
+                estudiante = cls.objects.create(
+                    email=email,
+                    codigoOrganizacion=codigoOrganizacion,
+                    **kwargs
+                )
+                estudiante.set_password(password)  # Configurar contraseña segura
+                estudiante.save()
 
-    class Meta:
-        verbose_name = "Simulación"
-        verbose_name_plural = "Simulaciones"
+                # Inscribir al estudiante en los cursos del instructor
+                cursos = Curso.objects.filter(instructores_asignados__codigoOrganizacion=codigoOrganizacion)
+                Progreso.objects.bulk_create([
+                    Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0)
+                    for curso in cursos
+                ])
 
-    def __str__(self):
-        return f"Simulación del curso: {self.curso.titulo} - {'Completada' if self.estado else 'No completada'}"
-    
+            return estudiante
 
-
-
+        except Instructor.DoesNotExist:
+            raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
+        except Exception as e:
+            raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
+        
 
 class Certificado(models.Model):
     codigoCertificado = models.CharField(max_length=100)

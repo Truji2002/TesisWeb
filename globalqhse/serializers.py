@@ -1,5 +1,23 @@
 from rest_framework import serializers
 from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa
+from .utils.email import EmailService
+import random
+import string
+import secrets
+
+
+class PasswordValidationMixin:
+    def validate_password(self, value):
+        """
+        Validar que la contraseña cumpla con los requisitos mínimos de seguridad.
+        """
+        if len(value) < 8:
+            raise serializers.ValidationError("La contraseña debe tener al menos 8 caracteres.")
+        if not any(char.isdigit() for char in value):
+            raise serializers.ValidationError("La contraseña debe contener al menos un número.")
+        if not any(char.isalpha() for char in value):
+            raise serializers.ValidationError("La contraseña debe contener al menos una letra.")
+        return value
 
 
 class EmpresaSerializer(serializers.ModelSerializer):
@@ -13,47 +31,149 @@ class UsuarioSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-class AdministradorSerializer(serializers.ModelSerializer):
+class AdministradorSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Administrador
-        fields = ['first_name','last_name', 'email', 'password', 'cargo']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['first_name', 'last_name', 'email', 'password', 'cargo']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }
 
     def create(self, validated_data):
-        user = Administrador(**validated_data)
-        user.set_password(validated_data['password'])
-        user.save()
-        return user
+        """
+        Crear un nuevo administrador con contraseña hasheada.
+        """
+        try:
+            user = Administrador(**validated_data)
+            user.set_password(validated_data['password'])  # Hash de la contraseña
+            user.save()
+            return user
+        except Exception as e:
+            raise serializers.ValidationError(f"Ocurrió un error al crear el administrador: {str(e)}")
+
     
-class InstructorSerializer(serializers.ModelSerializer):
+class InstructorSerializer(PasswordValidationMixin, serializers.ModelSerializer):
+
+    empresa_nombre = serializers.SerializerMethodField()
     class Meta:
         model = Instructor
-        fields = ['id','first_name','last_name', 'email', 'password','area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'area', 
+                  'fechaInicioCapacitacion', 'fechaFinCapacitacion', 
+                  'codigoOrganizacion', 'is_active','empresa','empresa_nombre']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }
+
+    def get_empresa_nombre(self, obj):
+        """
+        Retorna el nombre de la empresa asociada al instructor.
+        """
+        return obj.empresa.nombre if obj.empresa else None 
 
     def create(self, validated_data):
-        user = Instructor(**validated_data)
-        temp_password = user.generar_contraseña_temporal()  
-        user.set_password(temp_password) 
-        user.save()
-        return user
+        """
+        Crear un nuevo instructor con una contraseña temporal.
+        """
+        try:
+            user = Instructor(**validated_data)
+            temp_password = user.generar_contraseña_temporal()  # Generar contraseña temporal
+            user.set_password(temp_password)  # Hash de la contraseña temporal
+            user.save()
+            return user
+        except Exception as e:
+            raise serializers.ValidationError(f"Ocurrió un error al crear el instructor: {str(e)}")
+
+class RegisterInstructorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Instructor
+        fields = [
+            'first_name', 'last_name', 'email', 'area',
+            'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'empresa'
+        ]
+        extra_kwargs = {
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }
+
+    def create(self, validated_data):
+        self.rol = 'instructor'
+        try:
+            # Crear el instructor sin contraseña ni codigoOrganizacion
+            instructor = Instructor(**validated_data)
+
+            # Generar codigoOrganizacion automáticamente
+            prefix = instructor.empresa.nombre[:3].upper()
+            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+            instructor.codigoOrganizacion = f"{prefix}-{suffix}"
+
+            # Generar contraseña temporal
+            temp_password = secrets.token_urlsafe(10)
+            instructor.set_password(temp_password)  # Hashearla
+            instructor.save()
+
+            # Enviar la contraseña temporal por correo
+            email_service = EmailService(
+                to_email=instructor.email,
+                subject='Bienvenido a la organización',
+                body=f"""
+                Hola {instructor.first_name},
+
+                Su cuenta ha sido creada exitosamente. Aquí están sus credenciales de acceso:
+
+                - Código de organización: {instructor.codigoOrganizacion}
+                - Contraseña temporal: {temp_password}
+
+                Por favor, cambie su contraseña después de iniciar sesión.
+
+                Saludos,
+                Equipo de Global QHSE
+                """
+            )
+            email_service.send_email()
+
+            return instructor
+        except Exception as e:
+            raise serializers.ValidationError(f"Ocurrió un error al crear el instructor: {str(e)}")
 
 
-class EstudaianteSerializer(serializers.ModelSerializer):
+class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Estudiante
-        fields = ['first_name','last_name', 'email', 'password', 'asignadoSimulacion']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['first_name', 'last_name', 'email', 'password', 
+                  'asignadoSimulacion', 'codigoOrganizacion']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'email': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': True},
+        }
+
     def validate_email(self, value):
-        
+        """
+        Validar que el email no esté registrado.
+        """
         if Estudiante.objects.filter(email=value).exists():
             raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
+
     def create(self, validated_data):
-        user = Estudiante(**validated_data)
-        user.set_password(validated_data['password'])
-        user.save()
-        return user
+        """
+        Crear un nuevo estudiante con contraseña hasheada.
+        """
+        try:
+            user = Estudiante(**validated_data)
+            user.set_password(validated_data['password'])  # Hash de la contraseña
+            user.save()
+            return user
+        except Exception as e:
+            raise serializers.ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
 
 
 class LoginResponseSerializer(serializers.ModelSerializer):
@@ -61,17 +181,9 @@ class LoginResponseSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Usuario
-        fields = ['first_name','last_name', 'email', 'tipo_usuario']  
+        fields = ['first_name','last_name', 'email','rol']  
 
-    def get_tipo_usuario(self, obj):
 
-        if isinstance(obj, Administrador):
-            return "Administrador"
-        elif isinstance(obj, Instructor):
-            return "Instructor"
-        elif isinstance(obj, Estudiante):
-            return "Estudiante"
-        return "Usuario"
 
 class AdministradorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
@@ -86,7 +198,7 @@ class InstructorDetailSerializer(LoginResponseSerializer):
 class ClienteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Estudiante
-        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion']  
+        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion','codigoOrganizacion','is_active']  
 
 
 class SimulacionSerializer(serializers.ModelSerializer):

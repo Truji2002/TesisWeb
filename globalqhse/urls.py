@@ -4,8 +4,8 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
 
-from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView, Protected, RegistroClienteAPIView
-from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet
+from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView,  RegistroEstudianteAPIView
+from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,ModificarInstructorAPIView,RegisterInstructorAPIView
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
@@ -47,7 +47,8 @@ urlpatterns = [
     path('completar_modulo/<int:modulo_id>/', views.completar_modulo, name='completar_modulo'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
-    path('protected/', Protected.as_view(), name='protected'),
-    path('registroCliente/', RegistroClienteAPIView.as_view(), name='registro-cliente'),
+    path('registroEstudiante/', RegistroEstudianteAPIView.as_view(), name='registro-estudiante'),
+    path('modificacionInstructor/', ModificarInstructorAPIView.as_view(), name='modificacion-instructor'),
+    path('registrarInstructor/', RegisterInstructorAPIView.as_view(), name='registrar-instructor'),
    
 ]
