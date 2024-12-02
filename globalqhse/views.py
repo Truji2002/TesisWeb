@@ -290,10 +290,8 @@ class ModificarInstructorAPIView(APIView):
                 'nombre': openapi.Schema(type=openapi.TYPE_STRING, description='Nombre del nuevo instructor'),
                 'apellido': openapi.Schema(type=openapi.TYPE_STRING, description='Apellido del nuevo instructor'),
                 'email': openapi.Schema(type=openapi.TYPE_STRING, description='Correo electrónico del nuevo instructor'),
-                'fechaInicioCapacitacion': openapi.Schema(type=openapi.FORMAT_DATE, description='Fecha de inicio de la capacitación'),
-                'fechaFinCapacitacion': openapi.Schema(type=openapi.FORMAT_DATE, description='Fecha de fin de la capacitación'),
             },
-            required=['instructor_anterior_id', 'nombre', 'apellido', 'email', 'fechaInicioCapacitacion', 'fechaFinCapacitacion']
+            required=['instructor_anterior_id', 'nombre', 'apellido', 'email']
         ),
         responses={
             200: openapi.Response("Instructor reemplazado exitosamente."),
@@ -308,8 +306,7 @@ class ModificarInstructorAPIView(APIView):
             nombre = request.data.get('nombre')
             apellido = request.data.get('apellido')
             email = request.data.get('email')
-            fechaInicioCapacitacion = request.data.get('fechaInicioCapacitacion')
-            fechaFinCapacitacion = request.data.get('fechaFinCapacitacion')
+            
 
             # Obtener el instructor anterior
             instructor_anterior = Instructor.objects.get(id=instructor_anterior_id)
@@ -322,8 +319,8 @@ class ModificarInstructorAPIView(APIView):
                 area=instructor_anterior.area,
                 codigoOrganizacion=instructor_anterior.codigoOrganizacion,
                 empresa=instructor_anterior.empresa,
-                fechaInicioCapacitacion=fechaInicioCapacitacion,
-                fechaFinCapacitacion=fechaFinCapacitacion
+                fechaInicioCapacitacion=instructor_anterior.fechaInicioCapacitacion,
+                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion
             )
 
             # Generar una contraseña temporal para el nuevo instructor
@@ -357,6 +354,8 @@ class ModificarInstructorAPIView(APIView):
         except Instructor.DoesNotExist:
             return Response({"error": "El instructor anterior no existe."}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class EstudianteViewSet(viewsets.ModelViewSet):

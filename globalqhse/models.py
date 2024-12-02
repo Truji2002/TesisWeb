@@ -133,7 +133,7 @@ class Administrador(Usuario):
 
 class Instructor(Usuario):
     area = models.CharField(max_length=100)
-    codigoOrganizacion = models.CharField(max_length=100, blank=False,unique=True)
+    codigoOrganizacion = models.CharField(max_length=100, blank=False)
     fechaInicioCapacitacion = models.DateField()
     fechaFinCapacitacion = models.DateField()
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='instructores')
@@ -229,7 +229,6 @@ class Subcurso(models.Model):
 class Modulo(models.Model):
     subcurso = models.ForeignKey(Subcurso, on_delete=models.CASCADE, related_name='modulos', null=True)
     nombre = models.CharField(max_length=100)
-    descripcion = models.TextField(blank=True, null=True)
     enlace = models.URLField(max_length=500, blank=True, null=True, help_text="Enlace al contenido del módulo")
     archivo = models.FileField(upload_to='documents/', null=True)
     completado = models.BooleanField(default=False)
