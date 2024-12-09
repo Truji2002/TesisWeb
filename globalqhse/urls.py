@@ -10,6 +10,8 @@ from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
 
+from .views import SubcursosPorCursoAPIView
+from .views import ModulosPorSubcursoAPIView
 
 
 router = DefaultRouter()
@@ -50,5 +52,7 @@ urlpatterns = [
     path('registroEstudiante/', RegistroEstudianteAPIView.as_view(), name='registro-estudiante'),
     path('modificacionInstructor/', ModificarInstructorAPIView.as_view(), name='modificacion-instructor'),
     path('registrarInstructor/', RegisterInstructorAPIView.as_view(), name='registrar-instructor'),
+    path('subcursos/curso/<int:curso_id>/', SubcursosPorCursoAPIView.as_view(), name='subcursos_por_curso'),
+    path('modulos/subcurso/<int:subcurso_id>/', ModulosPorSubcursoAPIView.as_view(), name='modulos_por_subcurso'),
    
 ]

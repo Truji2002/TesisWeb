@@ -1,7 +1,7 @@
 
 from pathlib import Path
 from datetime import timedelta
-from drf_yasg import openapi
+
 import os
 from dotenv import load_dotenv
 

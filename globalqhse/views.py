@@ -528,6 +528,26 @@ class SubcursoViewSet(viewsets.ModelViewSet):
     serializer_class = SubcursoSerializer
     permission_classes = [IsAuthenticated]
 
+class SubcursosPorCursoAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Obtener subcursos asociados a un curso específico mediante su ID.",
+        responses={
+            200: openapi.Response("Lista de subcursos", SubcursoSerializer(many=True)),
+            404: "Curso no encontrado",
+        }
+    )
+    def get(self, request, curso_id, *args, **kwargs):
+        try:
+            curso = Curso.objects.get(id=curso_id)
+        except Curso.DoesNotExist:
+            return Response({"error": "Curso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        subcursos = Subcurso.objects.filter(curso=curso)
+        serializer = SubcursoSerializer(subcursos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class ModuloViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
@@ -535,6 +555,27 @@ class ModuloViewSet(viewsets.ModelViewSet):
     serializer_class = ModuloSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated]
+
+class ModulosPorSubcursoAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Obtener módulos asociados a un subcurso específico mediante su ID.",
+        responses={
+            200: openapi.Response("Lista de módulos", ModuloSerializer(many=True)),
+            404: "Subcurso no encontrado",
+        }
+    )
+    def get(self, request, subcurso_id, *args, **kwargs):
+        try:
+            subcurso = Subcurso.objects.get(id=subcurso_id)
+        except Subcurso.DoesNotExist:
+            return Response({"error": "Subcurso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        modulos = Modulo.objects.filter(subcurso=subcurso)
+        serializer = ModuloSerializer(modulos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 class SimulacionViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]

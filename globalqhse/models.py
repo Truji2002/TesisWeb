@@ -1,8 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
+
 from django.core.exceptions import ValidationError
 import random
 import string
@@ -370,22 +369,3 @@ class Pregunta(models.Model):
         return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres
 
 
-@receiver(post_save, sender=Modulo)
-def actualizar_cantidad_modulos_y_progreso(sender, instance, created, **kwargs):
-    subcurso = instance.subcurso
-    if created:
-        subcurso.cantidad_modulos += 1
-        subcurso.save()
-    subcurso.actualizar_progreso()
-
-
-@receiver(post_delete, sender=Modulo)
-def disminuir_cantidad_modulos(sender, instance, **kwargs):
-    try:
-        subcurso = instance.subcurso
-        if subcurso.cantidad_modulos > 0:
-            subcurso.cantidad_modulos -= 1
-            subcurso.save()
-        subcurso.actualizar_progreso()
-    except Subcurso.DoesNotExist:
-        pass
