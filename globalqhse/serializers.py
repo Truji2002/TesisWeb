@@ -226,10 +226,11 @@ class ModuloSerializer(serializers.ModelSerializer):
 class InstructorCursoSerializer(serializers.ModelSerializer):
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
     curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
+    curso_id=serializers.IntegerField(source='curso.id', read_only=True)
 
     class Meta:
         model = InstructorCurso
-        fields = ['id', 'instructor', 'instructor_email', 'curso', 'curso_titulo', 'fecha_asignacion']
+        fields = ['id', 'instructor', 'instructor_email','curso_id', 'curso', 'curso_titulo', 'fecha_asignacion']
         extra_kwargs = {
             'instructor': {'write_only': True},
             'curso': {'write_only': True},
