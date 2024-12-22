@@ -136,6 +136,7 @@ class Instructor(Usuario):
     fechaInicioCapacitacion = models.DateField()
     fechaFinCapacitacion = models.DateField()
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='instructores')
+    debeCambiarContraseña = models.BooleanField(default=True)  
 
     class Meta:
         verbose_name = "Instructor"
@@ -301,7 +302,7 @@ class Estudiante(Usuario):
     def save(self, *args, **kwargs):
         self.rol = 'estudiante'
         # Validar que el código de organización sea válido
-        if not Instructor.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exists():
+        if not Instructor.objects.filter(codigoOrganizacion=self.codigoOrganizacion,is_active=True).exists():
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         super().save(*args, **kwargs)
 
@@ -325,7 +326,9 @@ class Estudiante(Usuario):
                 estudiante.save()
 
                 # Inscribir al estudiante en los cursos del instructor
-                cursos = Curso.objects.filter(instructores_asignados__codigoOrganizacion=codigoOrganizacion)
+                cursos = Curso.objects.filter(
+                    curso_instructores__instructor__codigoOrganizacion=codigoOrganizacion
+                )
                 Progreso.objects.bulk_create([
                     Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0)
                     for curso in cursos
@@ -337,6 +340,7 @@ class Estudiante(Usuario):
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         except Exception as e:
             raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
+
         
 
 class Certificado(models.Model):

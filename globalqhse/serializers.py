@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa
+from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa,InstructorCurso
 from .utils.email import EmailService
 import random
 import string
@@ -177,11 +177,11 @@ class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer)
 
 
 class LoginResponseSerializer(serializers.ModelSerializer):
-    tipo_usuario = serializers.SerializerMethodField()
+    #tipo_usuario = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuario
-        fields = ['first_name','last_name', 'email','rol']  
+        fields = ['id','first_name','last_name', 'email','rol']  
 
 
 
@@ -193,9 +193,9 @@ class AdministradorDetailSerializer(LoginResponseSerializer):
 class InstructorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Instructor
-        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active']  
+        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active','debeCambiarContraseña']  
 
-class ClienteDetailSerializer(LoginResponseSerializer):
+class EstudianteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Estudiante
         fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion','codigoOrganizacion','is_active']  
@@ -221,3 +221,16 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = '__all__'
+
+
+class InstructorCursoSerializer(serializers.ModelSerializer):
+    instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
+    curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
+
+    class Meta:
+        model = InstructorCurso
+        fields = ['id', 'instructor', 'instructor_email', 'curso', 'curso_titulo', 'fecha_asignacion']
+        extra_kwargs = {
+            'instructor': {'write_only': True},
+            'curso': {'write_only': True},
+        }

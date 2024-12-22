@@ -11,19 +11,21 @@ from django.contrib.auth import authenticate
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework.decorators import api_view
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from drf_yasg import openapi
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Simulacion, Curso, Subcurso, Modulo, Empresa
+    Simulacion, Curso, Subcurso, Modulo, Empresa, InstructorCurso
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    ClienteDetailSerializer, LoginResponseSerializer, SimulacionSerializer,
-    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer
+    EstudianteDetailSerializer, LoginResponseSerializer, SimulacionSerializer,
+    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer
 )
 from .utils.email import EmailService
+from django.http import FileResponse, Http404
 
 logger = logging.getLogger(__name__)
 
@@ -320,7 +322,8 @@ class ModificarInstructorAPIView(APIView):
                 codigoOrganizacion=instructor_anterior.codigoOrganizacion,
                 empresa=instructor_anterior.empresa,
                 fechaInicioCapacitacion=instructor_anterior.fechaInicioCapacitacion,
-                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion
+                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion,
+                debeCambiarContraseña=True
             )
 
             # Generar una contraseña temporal para el nuevo instructor
@@ -403,7 +406,6 @@ class EstudianteViewSet(viewsets.ModelViewSet):
 
 class RegistroEstudianteAPIView(APIView):
     
-    
 
     """
     API para registrar un estudiante y asignarlo automáticamente a los cursos de su instructor
@@ -479,39 +481,106 @@ class LoginView(APIView):
             properties={
                 'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email'),
                 'password': openapi.Schema(type=openapi.TYPE_STRING, description='Contraseña'),
-            }
+            },
+            required=['email', 'password']
         ),
-        responses={200: 'Detalle del usuario autenticado con token', 401: 'Credenciales inválidas'}
+        responses={
+            200: openapi.Response("Detalle del usuario autenticado con token"),
+            401: "Credenciales inválidas",
+            403: "Cuenta desactivada"
+        }
     )
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
 
         user = authenticate(request, email=email, password=password)
-
+        
         if user is not None:
+            
             if user.is_active:
                 # Identificar el rol del usuario
                 if user.rol == 'admin':
+                    user = Administrador.objects.get(id=user.id)  # Forzar subclase Administrador
                     serializer = AdministradorDetailSerializer(user)
                 elif user.rol == 'instructor':
+                    user = Instructor.objects.get(id=user.id)  # Forzar subclase Instructor
                     serializer = InstructorDetailSerializer(user)
                 elif user.rol == 'estudiante':
-                    serializer = ClienteDetailSerializer(user)
+                    user = Estudiante.objects.get(id=user.id)  # Forzar subclase Estudiante
+                    serializer = EstudianteDetailSerializer(user)
                 else:
-                    serializer = LoginResponseSerializer(user)
+                    return Response({'error': 'Rol no válido.'}, status=status.HTTP_400_BAD_REQUEST)
 
+
+                # Generar tokens
                 refresh = RefreshToken.for_user(user)
 
+                # Respuesta
                 response_data = serializer.data
                 response_data['refresh'] = str(refresh)
                 response_data['access'] = str(refresh.access_token)
+
+                # Agregar `debeCambiarContraseña` solo si es un instructor
+                if user.rol == 'instructor':
+                    response_data['debeCambiarContraseña'] = user.debeCambiarContraseña
 
                 return Response(response_data, status=status.HTTP_200_OK)
             else:
                 return Response({'error': 'Cuenta desactivada'}, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({'error': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class CambiarContraseñaAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Permite al usuario autenticado cambiar su contraseña.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'old_password': openapi.Schema(type=openapi.TYPE_STRING, description='Contraseña actual'),
+                'new_password': openapi.Schema(type=openapi.TYPE_STRING, description='Nueva contraseña'),
+            },
+            required=['old_password', 'new_password']
+        ),
+        responses={
+            200: openapi.Response("Contraseña cambiada exitosamente."),
+            400: "Error en la solicitud (contraseña incorrecta o campos faltantes)."
+        }
+    )
+    def post(self, request):
+        user = request.user  # Usuario autenticado obtenido del token JWT
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        # Validar contraseñas ingresadas
+        if not old_password or not new_password:
+            return Response({'error': 'Ambos campos (old_password y new_password) son requeridos.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verificar que la contraseña antigua sea correcta
+        if not user.check_password(old_password):
+            return Response({'error': 'La contraseña antigua no es correcta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.check_password(new_password):
+            return Response({'error': 'La nueva contraseña no puede ser igual a la contraseña actual.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Cambiar la contraseña
+        user.set_password(new_password)
+        user.save()
+
+        # Verificar si es un instructor para actualizar `debeCambiarContraseña`
+        if user.rol == 'instructor':
+            try:
+                instructor = Instructor.objects.get(id=user.id)
+                instructor.debeCambiarContraseña = False
+                instructor.save()
+            except Instructor.DoesNotExist:
+                return Response({'error': 'Instructor no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({'message': 'Contraseña cambiada exitosamente.'}, status=status.HTTP_200_OK)
 
 
 class CursoViewSet(viewsets.ModelViewSet):
@@ -594,3 +663,124 @@ def completar_modulo(request, modulo_id):
     modulo.subcurso.actualizar_progreso()
 
     return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
+
+
+class DescargarArchivoModuloAPIView(APIView):
+    permission_classes = [IsAuthenticated]  # Cambia a [AllowAny] si no requiere autenticación
+
+    def get(self, request, pk, *args, **kwargs):
+        try:
+            # Obtener el módulo por su ID
+            modulo = Modulo.objects.get(pk=pk)
+
+            # Verificar si el módulo tiene un archivo asociado
+            if not modulo.archivo:
+                return Response({"error": "Este módulo no tiene un archivo asociado."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Retornar el archivo como respuesta
+            archivo = modulo.archivo.path
+            response = FileResponse(open(archivo, 'rb'), content_type='application/octet-stream')
+            response['Content-Disposition'] = f'inline; filename="{modulo.archivo.name}"'
+            return response
+
+        except Modulo.DoesNotExist:
+            raise Http404("Módulo no encontrado.")
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+
+class InstructorCursoAPIView(APIView):
+    """
+    API para gestionar las relaciones entre instructores y cursos.
+    """
+
+    @swagger_auto_schema(
+        operation_description="Obtiene todas las relaciones entre instructores y cursos o filtra por instructor y curso.",
+        manual_parameters=[
+            openapi.Parameter('instructor', openapi.IN_QUERY, description="ID del instructor", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('curso', openapi.IN_QUERY, description="ID del curso", type=openapi.TYPE_INTEGER),
+        ],
+        responses={200: InstructorCursoSerializer(many=True)}
+    )
+    def get(self, request):
+        instructor_id = request.query_params.get('instructor')
+        curso_id = request.query_params.get('curso')
+
+        # Filtrar por los parámetros proporcionados
+        if instructor_id and curso_id:
+            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id, curso_id=curso_id)
+        elif instructor_id:
+            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id)
+        elif curso_id:
+            relaciones = InstructorCurso.objects.filter(curso_id=curso_id)
+        else:
+            relaciones = InstructorCurso.objects.all()
+
+        serializer = InstructorCursoSerializer(relaciones, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Crea una nueva relación entre un instructor y un curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
+                'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['instructor', 'curso']
+        ),
+        responses={
+            201: openapi.Response('Relación creada exitosamente.', InstructorCursoSerializer),
+            400: 'Error en los datos enviados.',
+            500: 'Error interno del servidor.',
+        }
+    )
+    def post(self, request):
+        serializer = InstructorCursoSerializer(data=request.data)
+        if serializer.is_valid():
+            try:
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            except IntegrityError:
+                return Response(
+                    {"error": "La relación entre el instructor y el curso ya existe."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    @swagger_auto_schema(
+        operation_description="Elimina una relación entre un instructor y un curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
+                'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['instructor', 'curso']
+        ),
+        responses={
+            200: openapi.Response('Relación eliminada exitosamente.'),
+            400: 'Error en los datos enviados.',
+            404: 'Relación no encontrada.',
+        }
+    )
+    def delete(self, request):
+        instructor_id = request.data.get('instructor')
+        curso_id = request.data.get('curso')
+
+        if not instructor_id or not curso_id:
+            return Response(
+                {"error": "Los campos 'instructor' y 'curso' son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
+            relacion.delete()
+            return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
+        except InstructorCurso.DoesNotExist:
+            return Response(
+                {"error": "La relación entre el instructor y el curso no fue encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )

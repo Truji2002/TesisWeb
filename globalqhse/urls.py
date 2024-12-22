@@ -9,10 +9,11 @@ from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSe
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
-
+from .views import CambiarContraseñaAPIView
 from .views import SubcursosPorCursoAPIView
-from .views import ModulosPorSubcursoAPIView
+from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView
 
+from .views import DescargarArchivoModuloAPIView
 
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
@@ -46,6 +47,7 @@ urlpatterns = [
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('login/', LoginView.as_view(), name='login'),
+    path('cambiarPassword/', CambiarContraseñaAPIView.as_view(), name='cambiar_password'),
     path('completar_modulo/<int:modulo_id>/', views.completar_modulo, name='completar_modulo'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
@@ -54,5 +56,9 @@ urlpatterns = [
     path('registrarInstructor/', RegisterInstructorAPIView.as_view(), name='registrar-instructor'),
     path('subcursos/curso/<int:curso_id>/', SubcursosPorCursoAPIView.as_view(), name='subcursos_por_curso'),
     path('modulos/subcurso/<int:subcurso_id>/', ModulosPorSubcursoAPIView.as_view(), name='modulos_por_subcurso'),
+    path('modulos/<int:pk>/descargar/', DescargarArchivoModuloAPIView.as_view(), name='descargar_archivo_modulo'),
+    path('instructor-curso/', InstructorCursoAPIView.as_view(), name='instructor_curso'),
+
+   
    
 ]
