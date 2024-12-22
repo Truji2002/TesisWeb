@@ -116,6 +116,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'globalqhse.middlewares.AllowIframeFromSpecificOriginMiddleware',
 ]
 
 ROOT_URLCONF = 'capacitacion.urls'
@@ -206,6 +207,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://192.168.1.47:8000",
 ]
 CORS_ALLOW_ALL_ORIGINS = True
+
+
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 #AUTHENTICATION_BACKENDS = ['globalqhse.authentication.EmailBackend', 'django.contrib.auth.backends.ModelBackend']

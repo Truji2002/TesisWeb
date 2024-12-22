@@ -3,6 +3,12 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAdminUser, IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.http import HttpResponse, HttpResponseForbidden
+from .models import Progreso  
+import uuid
+from django.contrib.auth.decorators import login_required
+
+# Asegúrate de que 'Progreso' está definido en .models
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -15,13 +21,13 @@ from drf_yasg import openapi
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Simulacion, Curso, Subcurso, Modulo, Empresa
+    Simulacion, Curso, Subcurso, Modulo, Empresa, Prueba, Pregunta, Certificado
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
     ClienteDetailSerializer, LoginResponseSerializer, SimulacionSerializer,
-    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer
+    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer, PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer,CertificadoSerializer
 )
 from .utils.email import EmailService
 
@@ -583,6 +589,26 @@ class SimulacionViewSet(viewsets.ModelViewSet):
     serializer_class = SimulacionSerializer
     permission_classes = [IsAuthenticated] 
 
+class PruebaViewSet(viewsets.ModelViewSet):
+    queryset = Prueba.objects.all()
+    permission_classes = [IsAdminUser]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return PruebaConPreguntasSerializer
+        return PruebaSerializer
+class PreguntaViewSet(viewsets.ModelViewSet):
+    queryset = Pregunta.objects.all()
+    serializer_class = PreguntaSerializer
+    permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        prueba_id = self.request.query_params.get('prueba', None)
+        if prueba_id:
+            queryset = queryset.filter(prueba_id=prueba_id)
+        return queryset
+
 @api_view(['POST'])
 def completar_modulo(request, modulo_id):
     """Vista para marcar un módulo como completado y actualizar el progreso del subcurso."""
@@ -594,3 +620,55 @@ def completar_modulo(request, modulo_id):
     modulo.subcurso.actualizar_progreso()
 
     return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
+
+
+@login_required
+def emitir_certificado(request, curso_id):
+    """
+    Endpoint para emitir el certificado del curso si el estudiante cumple las condiciones.
+
+    Verifica que el usuario sea un estudiante y haya completado el curso.
+    Actualiza o crea el certificado marcándolo como emitido.
+    Devuelve un HttpResponse con el resultado.
+    """
+    # 1. Verificar que el usuario sea un estudiante
+    user = request.user
+    if not hasattr(user, 'rol') or user.rol != 'estudiante':
+        return HttpResponseForbidden("Solo los estudiantes pueden generar certificados.")
+
+    # 2. Verificar que el curso existe
+    curso = get_object_or_404(Curso, id=curso_id)
+
+    # 3. Verificar si el estudiante completó el curso
+    #    (supongamos que el modelo Progreso indica si se ha completado)
+    progreso = Progreso.objects.filter(estudiante=user, curso=curso).first()
+    if not progreso or not progreso.completado:
+        return HttpResponse("No has completado este curso o no hay registros de progreso.", status=400)
+
+    # 4. Verificar si el Certificado ya existe (OneToOneField con Curso)
+    #    Nota: si deseas un certificado POR ESTUDIANTE, tendrás que cambiar el modelo
+    try:
+        cert = curso.certificado  # Si no existe, generará DoesNotExist
+        # Actualizar el certificado
+        cert.estado = True  # Marcamos como emitido
+        cert.codigoCertificado = str(uuid.uuid4())[:8]  # Genera un código aleatorio
+        cert.save()
+        mensaje = "Certificado actualizado correctamente."
+    except Certificado.DoesNotExist:
+        # Crear un nuevo certificado
+        cert = Certificado.objects.create(
+            curso=curso,
+            codigoCertificado=str(uuid.uuid4())[:8],
+            estado=True  # Marcamos como emitido
+        )
+        mensaje = "Certificado emitido correctamente."
+
+    # 5. Retornar una respuesta, podrías mostrar datos del certificado
+    respuesta = f"""
+        <h1>{mensaje}</h1>
+        <p>Curso: {curso.titulo}</p>
+        <p>Código del Certificado: {cert.codigoCertificado}</p>
+        <p>Estado: {"Emitido" if cert.estado else "Pendiente"}</p>
+        <p>Fecha de Emisión: {cert.fechaEmision}</p>
+    """
+    return HttpResponse(respuesta)

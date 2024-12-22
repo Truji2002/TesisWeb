@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa
+from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa, Prueba, Pregunta, Certificado
 from .utils.email import EmailService
 import random
 import string
@@ -221,3 +221,49 @@ class ModuloSerializer(serializers.ModelSerializer):
     class Meta:
         model = Modulo
         fields = '__all__'
+from rest_framework import serializers
+from .models import Prueba, Pregunta
+
+from rest_framework import serializers
+from .models import Prueba, Pregunta
+
+class PreguntaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Pregunta
+        fields = ['pregunta', 'opcionesRespuestas', 'respuestaCorrecta', 'puntajePregunta']
+
+class PruebaConPreguntasSerializer(serializers.ModelSerializer):
+    preguntas = PreguntaSerializer(many=True, write_only=True)
+
+    class Meta:
+        model = Prueba
+        fields = ['curso', 'duracion', 'estaAprobado', 'calificacion', 'fechaEvaluacion', 'preguntas']
+
+    def create(self, validated_data):
+        preguntas_data = validated_data.pop('preguntas', [])
+        prueba = Prueba.objects.create(**validated_data)
+        for p_data in preguntas_data:
+            Pregunta.objects.create(prueba=prueba, **p_data)
+        return prueba
+
+class PruebaSerializer(serializers.ModelSerializer):
+    curso_titulo = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Prueba
+        fields = ['id', 'curso', 'duracion', 'estaAprobado', 'calificacion', 'fechaEvaluacion', 'curso_titulo']
+
+    def get_curso_titulo(self, obj):
+        return obj.curso.titulo if obj.curso else None
+class InstructorCursoSerializer(serializers.ModelSerializer):
+    instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
+    curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
+    curso_id=serializers.IntegerField(source='curso.id', read_only=True)
+
+    class Meta:
+        model = InstructorCurso
+        fields = ['id', 'instructor', 'instructor_email','curso_id', 'curso', 'curso_titulo', 'fecha_asignacion']
+        extra_kwargs = {
+            'instructor': {'write_only': True},
+            'curso': {'write_only': True},
+        }
