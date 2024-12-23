@@ -811,3 +811,46 @@ class InstructorCursoAPIView(APIView):
             return Response({"error": "La relación entre el instructor y el curso no fue encontrada."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class EstudiantesPorCodigoOrganizacionAPIView(APIView):
+    """
+    API para buscar estudiantes por código de organización.
+    """
+    @swagger_auto_schema(
+        operation_description="Busca estudiantes asociados a un código de organización.",
+        manual_parameters=[
+            openapi.Parameter(
+                'codigoOrganizacion',
+                openapi.IN_QUERY,
+                description="Código de organización del instructor",
+                type=openapi.TYPE_STRING,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response("Estudiantes encontrados.", EstudianteSerializer(many=True)),
+            400: "Código de organización no proporcionado.",
+            404: "No se encontraron estudiantes para el código de organización proporcionado.",
+        }
+    )
+    def get(self, request):
+        codigo_organizacion = request.query_params.get('codigoOrganizacion')
+
+        # Validar que el parámetro sea proporcionado
+        if not codigo_organizacion:
+            return Response(
+                {"error": "El parámetro 'codigoOrganizacion' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Buscar estudiantes por código de organización
+        estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+        if estudiantes.exists():
+            serializer = EstudianteSerializer(estudiantes, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            return Response(
+                {"message": "No se encontraron estudiantes para el código de organización proporcionado."},
+                status=status.HTTP_404_NOT_FOUND
+            )

@@ -146,7 +146,7 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
 class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Estudiante
-        fields = ['first_name', 'last_name', 'email', 'password', 
+        fields = ['id','first_name', 'last_name', 'email', 'password', 
                   'asignadoSimulacion', 'codigoOrganizacion']
         extra_kwargs = {
             'password': {'write_only': True},
