@@ -16,7 +16,7 @@ from drf_yasg import openapi
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Simulacion, Curso, Subcurso, Modulo, Empresa, InstructorCurso
+    Simulacion, Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
@@ -96,6 +96,7 @@ class AdministradorViewSet(viewsets.ModelViewSet):
     queryset = Administrador.objects.all()
     serializer_class = AdministradorSerializer
     permission_classes = [IsAdminUser]
+    #permission_classes = [AllowAny]
 
     @action(detail=False, methods=['post'])
     def crear(self, request):
@@ -737,18 +738,35 @@ class InstructorCursoAPIView(APIView):
         }
     )
     def post(self, request):
-        serializer = InstructorCursoSerializer(data=request.data)
-        if serializer.is_valid():
-            try:
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            except IntegrityError:
-                return Response(
-                    {"error": "La relación entre el instructor y el curso ya existe."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+        instructor_id = request.data.get('instructor')
+        curso_id = request.data.get('curso')
+
+        # Validar datos
+        if not instructor_id or not curso_id:
+            return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Crear la relación entre instructor y curso
+            relacion = InstructorCurso.objects.create(instructor_id=instructor_id, curso_id=curso_id)
+
+            # Obtener el código de organización del instructor
+            codigo_organizacion = relacion.instructor.codigoOrganizacion
+
+            # Obtener los estudiantes asociados al código de organización
+            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+            # Crear los registros de progreso para los estudiantes
+            Progreso.objects.bulk_create([
+                Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
+                for estudiante in estudiantes
+            ])
+
+            return Response({"message": "Relación creada exitosamente."}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            return Response({"error": "La relación entre el instructor y el curso ya existe."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @swagger_auto_schema(
         operation_description="Elimina una relación entre un instructor y un curso.",
         request_body=openapi.Schema(
@@ -770,17 +788,26 @@ class InstructorCursoAPIView(APIView):
         curso_id = request.data.get('curso')
 
         if not instructor_id or not curso_id:
-            return Response(
-                {"error": "Los campos 'instructor' y 'curso' son requeridos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
+            # Obtener la relación
             relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
+
+            # Obtener el código de organización del instructor
+            codigo_organizacion = relacion.instructor.codigoOrganizacion
+
+            # Obtener los estudiantes asociados al código de organización
+            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+            # Eliminar los registros de progreso relacionados con los estudiantes y el curso
+            Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
+
+            # Eliminar la relación entre instructor y curso
             relacion.delete()
+
             return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
         except InstructorCurso.DoesNotExist:
-            return Response(
-                {"error": "La relación entre el instructor y el curso no fue encontrada."},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({"error": "La relación entre el instructor y el curso no fue encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

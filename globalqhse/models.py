@@ -327,7 +327,7 @@ class Estudiante(Usuario):
 
                 # Inscribir al estudiante en los cursos del instructor
                 cursos = Curso.objects.filter(
-                    curso_instructores__instructor__codigoOrganizacion=codigoOrganizacion
+                    instructores_asignados__instructor__codigoOrganizacion=codigoOrganizacion
                 )
                 Progreso.objects.bulk_create([
                     Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0)
