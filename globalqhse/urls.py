@@ -5,13 +5,13 @@ from drf_yasg import openapi
 from rest_framework import permissions
 
 from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView,  RegistroEstudianteAPIView
-from .views import SimulacionViewSet,CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,ModificarInstructorAPIView,RegisterInstructorAPIView
+from .views import CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,ModificarInstructorAPIView,RegisterInstructorAPIView
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
 from .views import SubcursosPorCursoAPIView
-from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView
+from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 
 from .views import DescargarArchivoModuloAPIView
 
@@ -21,10 +21,11 @@ router.register(r'administradores', AdministradorViewSet)
 router.register(r'instructores', InstructorViewSet)
 router.register(r'empresas', EmpresaViewSet)
 router.register(r'estudiantes', EstudianteViewSet)
-router.register(r'simulaciones',SimulacionViewSet)
+
 router.register(r'cursos',CursoViewSet)
 router.register(r'subcursos',SubcursoViewSet)
 router.register(r'modulos',ModuloViewSet)
+router.register(r'progreso',ProgresoViewSet)
 
 schema_view = get_schema_view(
    openapi.Info(
@@ -48,7 +49,6 @@ urlpatterns = [
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('login/', LoginView.as_view(), name='login'),
     path('cambiarPassword/', CambiarContraseñaAPIView.as_view(), name='cambiar_password'),
-    path('completar_modulo/<int:modulo_id>/', views.completar_modulo, name='completar_modulo'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
     path('registroEstudiante/', RegistroEstudianteAPIView.as_view(), name='registro-estudiante'),
@@ -59,6 +59,7 @@ urlpatterns = [
     path('modulos/<int:pk>/descargar/', DescargarArchivoModuloAPIView.as_view(), name='descargar_archivo_modulo'),
     path('instructor-curso/', InstructorCursoAPIView.as_view(), name='instructor_curso'),
     path('estudiante-codigoOrganizacion/', EstudiantesPorCodigoOrganizacionAPIView.as_view(), name='estudiante_codigoOrganizacion'),
+    path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
 
    
    

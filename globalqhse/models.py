@@ -7,6 +7,9 @@ import random
 import string
 import secrets
 from django.db import transaction
+from django.core.files.base import File
+from reportlab.pdfgen import canvas
+import io
 
 
 class Empresa(models.Model):
@@ -159,12 +162,7 @@ class Instructor(Usuario):
             raise ValidationError("La fecha de inicio de la capacitación no puede ser posterior a la fecha de fin.")
         super().clean()
 
-    def asignar_simulacion_a_estudiante(self, simulacion, estudiante):
-        if estudiante.instructor != self:
-            raise ValidationError("El estudiante debe estar asignado a este instructor.")
-        if not simulacion.estudiantes.filter(id=estudiante.id).exists():
-            simulacion.estudiantes.add(estudiante)
-            simulacion.save()
+
 
     def generar_contraseña_temporal(self):
         temp_password = secrets.token_urlsafe(10)
@@ -178,6 +176,7 @@ class Curso(models.Model):
     descripcion = models.TextField(null=True)
     cantidadSubcursos = models.IntegerField(default=0)
     imagen = models.ImageField(upload_to='documents/', null=True)
+    simulacion = models.BooleanField(null=True)
 
     class Meta:
         verbose_name = "Curso"
@@ -205,7 +204,7 @@ class Subcurso(models.Model):
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name='subcursos')
     nombre = models.CharField(max_length=200)
     cantidad_modulos = models.IntegerField(default=0)
-    progreso = models.FloatField(default=0)
+
 
     class Meta:
         verbose_name = "Subcurso"
@@ -214,15 +213,7 @@ class Subcurso(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.curso.titulo})"
 
-    def actualizar_progreso(self):
-        """Actualiza el progreso en porcentaje basado en módulos completados."""
-        total_modulos = self.modulos.count()
-        modulos_completados = self.modulos.filter(completado=True).count()
-        if total_modulos > 0:
-            self.progreso = (modulos_completados / total_modulos) * 100
-        else:
-            self.progreso = 0
-        self.save()
+
 
 
 # Clase Modulo
@@ -231,7 +222,7 @@ class Modulo(models.Model):
     nombre = models.CharField(max_length=100)
     enlace = models.URLField(max_length=500, blank=True, null=True, help_text="Enlace al contenido del módulo")
     archivo = models.FileField(upload_to='documents/', null=True)
-    completado = models.BooleanField(default=False)
+
 
     class Meta:
         verbose_name = "Módulo"
@@ -241,42 +232,32 @@ class Modulo(models.Model):
         return f"{self.nombre}"
 
 
-# Clase Simulación
-class Simulacion(models.Model):
-    curso = models.OneToOneField('Curso', on_delete=models.CASCADE, related_name='simulacion')
-    estado = models.BooleanField(default=False)
-    fecha = models.DateField()
 
-    class Meta:
-        verbose_name = "Simulación"
-        verbose_name_plural = "Simulaciones"
-
-    def __str__(self):
-        return f"Simulación del curso: {self.curso.titulo} - {'Activa' if self.estado else 'Inactiva'}"
 
 
 # Clase Prueba
 class Prueba(models.Model):
     curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='prueba', null=True)
     duracion = models.IntegerField()
-    estaAprobado = models.BooleanField(default=False)
-    calificacion = models.FloatField()
-    fechaEvaluacion = models.DateField()
+    fechaCreacion = models.DateField()
 
     class Meta:
         verbose_name = "Prueba"
         verbose_name_plural = "Pruebas"
 
-    def __str__(self):
-        return f"Prueba Única - {'Aprobada' if self.estaAprobado else 'No Aprobada'}"
+
 
 
 # Clase Progreso (tabla intermedia entre Curso y Estudiante)
 class Progreso(models.Model):
     estudiante = models.ForeignKey('Estudiante', on_delete=models.CASCADE, related_name='progresos')
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name='progresos')
+    simulacionCompletada = models.BooleanField(null=True)
+    contenidoCompletado = models.BooleanField(null=True)
     completado = models.BooleanField(default=False)
     porcentajeCompletado = models.FloatField(default=0)
+    fechaInicioCurso=models.DateField(auto_now_add=True,null=True)
+    fechaFinCurso=models.DateField(null=True)
 
     class Meta:
         verbose_name = "Progreso"
@@ -284,11 +265,41 @@ class Progreso(models.Model):
 
     def __str__(self):
         return f"{self.estudiante.email} - {self.curso.titulo}: {self.porcentajeCompletado}% completado"
+    
+    def calcular_porcentaje_completado(self):
+        """
+        Calcula el porcentaje completado del curso basado en las condiciones definidas.
+        """
+        # Obtener datos necesarios
+        prueba = EstudiantePrueba.objects.filter(estudiante=self.estudiante, prueba__curso=self.curso).first()
+        esta_aprobado = prueba.estaAprobado if prueba else False
+
+        if self.curso.simulacion:
+            # Regla de 3: simulación, contenido, prueba
+            completado_total = sum([
+                self.simulacionCompletada,
+                self.contenidoCompletado,
+                esta_aprobado
+            ])
+            self.porcentajeCompletado = (completado_total / 3) * 100
+        else:
+            # Regla de 2: contenido, prueba
+            completado_total = sum([
+                self.contenidoCompletado,
+                esta_aprobado
+            ])
+            self.porcentajeCompletado = (completado_total / 2) * 100
+
+        # Actualizar campo `completado`
+        self.completado = self.porcentajeCompletado == 100
+
+        # Guardar cambios
+        self.save()
 
 
 
 class Estudiante(Usuario):
-    asignadoSimulacion = models.BooleanField(default=False)
+    
     codigoOrganizacion = models.CharField(max_length=100, blank=False)
 
     class Meta:
@@ -296,8 +307,8 @@ class Estudiante(Usuario):
         verbose_name_plural = "Estudiantes"
 
     def __str__(self):
-        estado_simulacion = "Con simulación" if self.asignadoSimulacion else "Sin simulación"
-        return f"Estudiante: {self.email} - {estado_simulacion}"
+        
+        return f"Estudiante: {self.email}"
 
     def save(self, *args, **kwargs):
         self.rol = 'estudiante'
@@ -330,7 +341,7 @@ class Estudiante(Usuario):
                     instructores_asignados__instructor__codigoOrganizacion=codigoOrganizacion
                 )
                 Progreso.objects.bulk_create([
-                    Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0)
+                    Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0,simulacionCompletada=False)
                     for curso in cursos
                 ])
 
@@ -341,21 +352,68 @@ class Estudiante(Usuario):
         except Exception as e:
             raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
 
-        
-
-class Certificado(models.Model):
-    codigoCertificado = models.CharField(max_length=100)
-    estado = models.BooleanField(default=False)
-    fechaEmision = models.DateField(auto_now_add=True)
-    curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='certificado')
+class EstudiantePrueba(models.Model):
+    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="progresos_prueba")
+    prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name="progresos")
+    estaAprobado = models.BooleanField(default=False)
+    calificacion = models.FloatField(default=0.0)
+    intento=models.IntegerField(default=0)
+    fechaPrueba=models.DateField(auto_now_add=True)
 
     class Meta:
-        verbose_name = "Certificado"
-        verbose_name_plural = "Certificados"
+        unique_together = ('estudiante', 'prueba')
+
+class Certificado(models.Model):
+    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="certificados",null=True)
+    curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name="certificados")
+    fechaEmision = models.DateField(auto_now_add=True)
+    archivoPdf = models.FileField(upload_to='certificados/', null=True, blank=True)  # Opcional, para guardar el archivo PDF del certificado
+
+    class Meta:
+        unique_together = ('estudiante', 'curso')  # Un estudiante no puede tener más de un certificado por curso.
 
     def __str__(self):
-        return f"Certificado del curso {self.curso.titulo} - {'Emitido' if self.estado else 'Pendiente'}"
+        return f"Certificado de {self.estudiante.email} para {self.curso.titulo}"
 
+    @classmethod
+    def emitir_certificado(cls, estudiante, curso):
+        """
+        Genera un certificado si el estudiante ha completado el curso.
+        """
+        try:
+            # Verificar si el estudiante ya completó el curso
+            progreso = Progreso.objects.filter(estudiante=estudiante, curso=curso, completado=True).first()
+            if not progreso:
+                return "El estudiante no ha completado el curso."
+
+            # Verificar si ya existe un certificado para este estudiante y curso
+            if cls.objects.filter(estudiante=estudiante, curso=curso).exists():
+                return "El certificado ya ha sido emitido."
+
+            # Validar datos
+            if not estudiante.first_name or not estudiante.last_name:
+                return "Los datos del estudiante son incompletos."
+            if not curso.titulo:
+                return "El título del curso no está disponible."
+
+            # Generar el archivo PDF del certificado
+            buffer = io.BytesIO()
+            pdf = canvas.Canvas(buffer)
+            pdf.drawString(100, 750, "Certificado de Finalización")
+            pdf.drawString(100, 730, f"Otorgado a: {estudiante.first_name} {estudiante.last_name}")
+            pdf.drawString(100, 710, f"Por completar satisfactoriamente el curso: {curso.titulo}")
+            pdf.save()
+            buffer.seek(0)
+
+            # Crear el certificado
+            with transaction.atomic():
+                certificado = cls.objects.create(estudiante=estudiante, curso=curso)
+                certificado.archivoPdf.save(f"certificado_{curso.id}_{estudiante.id}.pdf", File(buffer))
+
+            return "Certificado emitido exitosamente."
+
+        except Exception as e:
+            return f"Error al emitir el certificado: {str(e)}"
 
 
 class Pregunta(models.Model):

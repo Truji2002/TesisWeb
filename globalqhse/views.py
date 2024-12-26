@@ -16,13 +16,13 @@ from drf_yasg import openapi
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Simulacion, Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso
+    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    EstudianteDetailSerializer, LoginResponseSerializer, SimulacionSerializer,
-    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer
+    EstudianteDetailSerializer, LoginResponseSerializer, 
+    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer,ProgresoSerializer
 )
 from .utils.email import EmailService
 from django.http import FileResponse, Http404
@@ -647,23 +647,8 @@ class ModulosPorSubcursoAPIView(APIView):
         serializer = ModuloSerializer(modulos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class SimulacionViewSet(viewsets.ModelViewSet):
-    authentication_classes = [JWTAuthentication]
-    queryset = Simulacion.objects.all()
-    serializer_class = SimulacionSerializer
-    permission_classes = [IsAuthenticated] 
 
-@api_view(['POST'])
-def completar_modulo(request, modulo_id):
-    """Vista para marcar un módulo como completado y actualizar el progreso del subcurso."""
-    modulo = get_object_or_404(Modulo, id=modulo_id)
-    modulo.completado = True
-    modulo.save()
 
-    # Actualizar progreso del subcurso
-    modulo.subcurso.actualizar_progreso()
-
-    return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
 
 
 class DescargarArchivoModuloAPIView(APIView):
@@ -854,3 +839,57 @@ class EstudiantesPorCodigoOrganizacionAPIView(APIView):
                 {"message": "No se encontraron estudiantes para el código de organización proporcionado."},
                 status=status.HTTP_404_NOT_FOUND
             )
+        
+
+class ProgresoViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = Progreso.objects.all()
+    serializer_class = ProgresoSerializer
+    permission_classes = [IsAuthenticated]
+
+class EmitirCertificadoAPIView(APIView):
+    """
+    API para emitir un certificado basado en el progreso del estudiante.
+    """
+    @swagger_auto_schema(
+        operation_description="Emitir un certificado para un estudiante basado en el progreso completado del curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del estudiante'),
+                'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['estudiante_id', 'curso_id']
+        ),
+        responses={
+            201: openapi.Response("Certificado emitido exitosamente."),
+            200: openapi.Response("El certificado ya ha sido emitido."),
+            400: openapi.Response("Error en los datos o progreso incompleto."),
+            404: openapi.Response("Estudiante o curso no encontrado."),
+        }
+    )
+    def post(self, request):
+        estudiante_id = request.data.get('estudiante_id')
+        curso_id = request.data.get('curso_id')
+
+        # Validar los parámetros
+        if not estudiante_id or not curso_id:
+            return Response({"error": "Los campos 'estudiante_id' y 'curso_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener estudiante y curso
+        try:
+            estudiante = Estudiante.objects.get(id=estudiante_id)
+            curso = Curso.objects.get(id=curso_id)
+        except Estudiante.DoesNotExist:
+            return Response({"error": "Estudiante no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except Curso.DoesNotExist:
+            return Response({"error": "Curso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Emitir el certificado
+        resultado = Certificado.emitir_certificado(estudiante, curso)
+        if resultado == "El estudiante no ha completado el curso.":
+            return Response({"error": resultado}, status=status.HTTP_400_BAD_REQUEST)
+        if resultado == "El certificado ya ha sido emitido.":
+            return Response({"message": resultado}, status=status.HTTP_200_OK)
+
+        return Response({"message": resultado}, status=status.HTTP_201_CREATED)

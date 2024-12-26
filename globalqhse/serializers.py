@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa,InstructorCurso
+from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso
 from .utils.email import EmailService
 import random
 import string
@@ -147,7 +147,7 @@ class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer)
     class Meta:
         model = Estudiante
         fields = ['id','first_name', 'last_name', 'email', 'password', 
-                  'asignadoSimulacion', 'codigoOrganizacion']
+                   'codigoOrganizacion']
         extra_kwargs = {
             'password': {'write_only': True},
             'email': {'required': True},
@@ -198,13 +198,10 @@ class InstructorDetailSerializer(LoginResponseSerializer):
 class EstudianteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Estudiante
-        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion','codigoOrganizacion','is_active']  
+        fields = LoginResponseSerializer.Meta.fields + ['codigoOrganizacion','is_active']  
 
 
-class SimulacionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Simulacion
-        fields = '__all__'
+
 
 
 class CursoSerializer(serializers.ModelSerializer):
@@ -235,3 +232,8 @@ class InstructorCursoSerializer(serializers.ModelSerializer):
             'instructor': {'write_only': True},
             'curso': {'write_only': True},
         }
+
+class ProgresoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Progreso
+        fields = '__all__'
