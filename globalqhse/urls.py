@@ -10,7 +10,7 @@ from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
-from .views import SubcursosPorCursoAPIView
+from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 
 from .views import DescargarArchivoModuloAPIView
@@ -26,6 +26,7 @@ router.register(r'cursos',CursoViewSet)
 router.register(r'subcursos',SubcursoViewSet)
 router.register(r'modulos',ModuloViewSet)
 router.register(r'progreso',ProgresoViewSet)
+router.register(r'estudiantePrueba',EstudiantePruebaViewSet)
 
 schema_view = get_schema_view(
    openapi.Info(

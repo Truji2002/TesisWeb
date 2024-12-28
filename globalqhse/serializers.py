@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso
+from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso,EstudiantePrueba
 from .utils.email import EmailService
 import random
 import string
@@ -236,4 +236,10 @@ class InstructorCursoSerializer(serializers.ModelSerializer):
 class ProgresoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Progreso
+        fields = '__all__'
+
+
+class EstudiantePruebaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EstudiantePrueba
         fields = '__all__'

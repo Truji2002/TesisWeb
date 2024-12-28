@@ -16,12 +16,12 @@ from drf_yasg import openapi
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado
+    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    EstudianteDetailSerializer, LoginResponseSerializer, 
+    EstudianteDetailSerializer, LoginResponseSerializer, EstudiantePruebaSerializer,
     SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer,ProgresoSerializer
 )
 from .utils.email import EmailService
@@ -846,6 +846,14 @@ class ProgresoViewSet(viewsets.ModelViewSet):
     queryset = Progreso.objects.all()
     serializer_class = ProgresoSerializer
     permission_classes = [IsAuthenticated]
+
+class EstudiantePruebaViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = EstudiantePrueba.objects.all()
+    serializer_class = EstudiantePruebaSerializer
+    permission_classes = [IsAuthenticated]
+
+
 
 class EmitirCertificadoAPIView(APIView):
     """
