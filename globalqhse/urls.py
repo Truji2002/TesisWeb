@@ -10,7 +10,7 @@ from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
-from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet
+from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 
 from .views import DescargarArchivoModuloAPIView
@@ -61,6 +61,7 @@ urlpatterns = [
     path('instructor-curso/', InstructorCursoAPIView.as_view(), name='instructor_curso'),
     path('estudiante-codigoOrganizacion/', EstudiantesPorCodigoOrganizacionAPIView.as_view(), name='estudiante_codigoOrganizacion'),
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
+    path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
 
    
    

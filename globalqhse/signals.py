@@ -54,6 +54,9 @@ def actualizar_progreso_curso(sender, instance, **kwargs):
     """
     Actualiza el porcentaje completado del curso cada vez que se guarda un progreso.
     """
+    if instance._skip_post_save:
+        return
+    
     instance.calcular_porcentaje_completado()
 
 @receiver(post_save, sender=EstudiantePrueba)

@@ -25,7 +25,7 @@ from .serializers import (
     SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer,ProgresoSerializer
 )
 from .utils.email import EmailService
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 
 logger = logging.getLogger(__name__)
 
@@ -591,6 +591,34 @@ class CursoViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [IsAuthenticated]
 
+    def perform_update(self, serializer):
+        """
+        Personaliza el comportamiento al actualizar un curso.
+        Si el campo `simulacion` cambia, actualiza los registros de progreso relacionados.
+        """
+        # Guarda la instancia original antes de la actualización
+        curso_anterior = self.get_object()
+
+        # Realiza la actualización
+        instance = serializer.save()
+
+        # Si `simulacion` cambió de False a True
+        if not curso_anterior.simulacion and instance.simulacion:
+            # Actualiza los registros de progreso relacionados
+            Progreso.objects.filter(
+                curso=instance,
+                fechaFinCurso__isnull=True,  # No tienen fecha de finalización
+                porcentajeCompletado__lt=100,  # No están al 100%
+                simulacionCompletada__isnull=True  # No tienen simulación completada
+            ).update(simulacionCompletada=False)
+
+        # Si `simulacion` cambió de True a False
+        elif curso_anterior.simulacion and not instance.simulacion:
+            # Establece el campo simulacionCompletada como NULL para los registros de progreso relacionados
+            Progreso.objects.filter(
+                curso=instance
+            ).update(simulacionCompletada=None)
+
 
 class SubcursoViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
@@ -644,7 +672,8 @@ class ModulosPorSubcursoAPIView(APIView):
             return Response({"error": "Subcurso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         modulos = Modulo.objects.filter(subcurso=subcurso)
-        serializer = ModuloSerializer(modulos, many=True)
+        # Pasa el request al contexto del serializer
+        serializer = ModuloSerializer(modulos, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
@@ -846,6 +875,31 @@ class ProgresoViewSet(viewsets.ModelViewSet):
     queryset = Progreso.objects.all()
     serializer_class = ProgresoSerializer
     permission_classes = [IsAuthenticated]
+    @swagger_auto_schema(
+        operation_description="Obtiene los registros de progreso. Si se proporciona `estudiante_id`, filtra los registros por el ID del estudiante.",
+        manual_parameters=[
+            openapi.Parameter(
+                'estudiante_id', 
+                openapi.IN_QUERY, 
+                description="Filtra los registros de progreso por ID del estudiante.", 
+                type=openapi.TYPE_INTEGER
+            ),
+        ],
+        responses={200: ProgresoSerializer(many=True)}
+    )
+    def list(self, request, *args, **kwargs):
+        """
+        Documentación del método list para incluir `estudiante_id` como filtro.
+        """
+        return super().list(request, *args, **kwargs)
+    def get_queryset(self):
+        """
+        Filtra los registros de progreso por `estudiante_id` si se proporciona como parámetro.
+        """
+        estudiante_id = self.request.query_params.get('estudiante_id')  # Capturar el parámetro `estudiante_id`
+        if estudiante_id:
+            return Progreso.objects.filter(estudiante_id=estudiante_id)
+        return super().get_queryset()  # Devuelve todos los registros si no hay filtro
 
 class EstudiantePruebaViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
@@ -901,3 +955,84 @@ class EmitirCertificadoAPIView(APIView):
             return Response({"message": resultado}, status=status.HTTP_200_OK)
 
         return Response({"message": resultado}, status=status.HTTP_201_CREATED)
+
+class CertificadoAPIView(APIView):
+    """
+    API para obtener información de un certificado específico.
+    Recibe `curso_id` y `estudiante_id` como parámetros.
+    """
+
+    @swagger_auto_schema(
+        operation_description="Obtiene un certificado específico basado en el curso y el estudiante.",
+        manual_parameters=[
+            openapi.Parameter(
+                'curso_id', openapi.IN_QUERY, description="ID del curso",
+                type=openapi.TYPE_INTEGER, required=True
+            ),
+            openapi.Parameter(
+                'estudiante_id', openapi.IN_QUERY, description="ID del estudiante",
+                type=openapi.TYPE_INTEGER, required=True
+            ),
+        ],
+        responses={
+            200: "Certificado PDF enviado como respuesta",
+            400: openapi.Response(
+                "Faltan parámetros",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING, description="Descripción del error"),
+                    }
+                )
+            ),
+            404: openapi.Response(
+                "Certificado no encontrado",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'error': openapi.Schema(type=openapi.TYPE_STRING, description="Descripción del error"),
+                    }
+                )
+            )
+        }
+    )
+    def get(self, request):
+        # Obtener los parámetros de la solicitud
+        curso_id = request.query_params.get('curso_id')
+        estudiante_id = request.query_params.get('estudiante_id')
+
+        # Validar que se pasen los parámetros requeridos
+        if not curso_id or not estudiante_id:
+            return Response(
+                {"error": "Se requieren los parámetros 'curso_id' y 'estudiante_id'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Buscar el certificado
+        try:
+            certificado = Certificado.objects.get(curso_id=curso_id, estudiante_id=estudiante_id)
+        except Certificado.DoesNotExist:
+            return Response(
+                {"error": "No se encontró un certificado para el curso y estudiante especificados."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Verificar si el certificado tiene un archivo PDF asociado
+        if not certificado.archivoPdf:
+            return Response(
+                {"error": "El certificado no tiene un archivo PDF asociado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Leer el archivo PDF y enviarlo como respuesta
+        pdf_path = certificado.archivoPdf.path
+        try:
+            with open(pdf_path, 'rb') as pdf_file:
+                response = HttpResponse(pdf_file.read(), content_type='application/pdf')
+                response['Content-Disposition'] = f'attachment; filename="{certificado.archivoPdf.name}"'
+                return response
+        except FileNotFoundError:
+            return Response(
+                {"error": "El archivo PDF no se encontró en el servidor."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

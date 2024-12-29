@@ -258,6 +258,7 @@ class Progreso(models.Model):
     porcentajeCompletado = models.FloatField(default=0)
     fechaInicioCurso=models.DateField(auto_now_add=True,null=True)
     fechaFinCurso=models.DateField(null=True)
+    _skip_post_save = False
 
     class Meta:
         verbose_name = "Progreso"
@@ -270,6 +271,7 @@ class Progreso(models.Model):
         """
         Calcula el porcentaje completado del curso basado en las condiciones definidas.
         """
+        
         # Obtener datos necesarios
         prueba = EstudiantePrueba.objects.filter(estudiante=self.estudiante, prueba__curso=self.curso).first()
         esta_aprobado = prueba.estaAprobado if prueba else False
@@ -293,8 +295,9 @@ class Progreso(models.Model):
         # Actualizar campo `completado`
         self.completado = self.porcentajeCompletado == 100
 
-        # Guardar cambios
+        self._skip_post_save = True  # Evita disparar la señal
         self.save()
+        self._skip_post_save = False
 
 
 

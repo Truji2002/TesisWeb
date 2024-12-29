@@ -215,9 +215,17 @@ class SubcursoSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class ModuloSerializer(serializers.ModelSerializer):
+    archivo_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Modulo
-        fields = '__all__'
+        fields = ['id', 'nombre', 'enlace', 'archivo_url','subcurso']  # Incluye otros campos relevantes
+
+    def get_archivo_url(self, obj):
+        request = self.context.get('request')  # Asegúrate de pasar el `request` al serializer en la vista
+        if obj.archivo and hasattr(obj.archivo, 'url'):
+            return request.build_absolute_uri(obj.archivo.url)
+        return None
 
 
 class InstructorCursoSerializer(serializers.ModelSerializer):

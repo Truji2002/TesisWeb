@@ -47,7 +47,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'drf_yasg',
-    'globalqhse'
+    'globalqhse',
+    'csp',
 ]
 
 """
@@ -117,6 +118,7 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'globalqhse.middlewares.AllowIframeFromSpecificOriginMiddleware',
+    'csp.middleware.CSPMiddleware',
 ]
 
 ROOT_URLCONF = 'capacitacion.urls'
@@ -208,6 +210,8 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 
+
+CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:5173"]
 
 
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
