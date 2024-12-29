@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Simulacion, Curso, Subcurso, Modulo, Empresa, Prueba, Pregunta, Certificado
+from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso,Prueba, Pregunta
 from .utils.email import EmailService
 import random
 import string
@@ -146,8 +146,8 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
 class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer):
     class Meta:
         model = Estudiante
-        fields = ['first_name', 'last_name', 'email', 'password', 
-                  'asignadoSimulacion', 'codigoOrganizacion']
+        fields = ['id','first_name', 'last_name', 'email', 'password', 
+                   'codigoOrganizacion']
         extra_kwargs = {
             'password': {'write_only': True},
             'email': {'required': True},
@@ -177,11 +177,11 @@ class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer)
 
 
 class LoginResponseSerializer(serializers.ModelSerializer):
-    tipo_usuario = serializers.SerializerMethodField()
+    #tipo_usuario = serializers.SerializerMethodField()
 
     class Meta:
         model = Usuario
-        fields = ['first_name','last_name', 'email','rol']  
+        fields = ['id','first_name','last_name', 'email','rol']  
 
 
 
@@ -193,18 +193,15 @@ class AdministradorDetailSerializer(LoginResponseSerializer):
 class InstructorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Instructor
-        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active']  
+        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active','debeCambiarContraseña']  
 
-class ClienteDetailSerializer(LoginResponseSerializer):
+class EstudianteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Estudiante
-        fields = LoginResponseSerializer.Meta.fields + ['asignadoSimulacion','codigoOrganizacion','is_active']  
+        fields = LoginResponseSerializer.Meta.fields + ['codigoOrganizacion','is_active']  
 
 
-class SimulacionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Simulacion
-        fields = '__all__'
+
 
 
 class CursoSerializer(serializers.ModelSerializer):
@@ -215,6 +212,30 @@ class CursoSerializer(serializers.ModelSerializer):
 class SubcursoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subcurso
+        fields = '__all__'
+
+class ModuloSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Modulo
+        fields = '__all__'
+
+
+class InstructorCursoSerializer(serializers.ModelSerializer):
+    instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
+    curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
+    curso_id=serializers.IntegerField(source='curso.id', read_only=True)
+
+    class Meta:
+        model = InstructorCurso
+        fields = ['id', 'instructor', 'instructor_email','curso_id', 'curso', 'curso_titulo', 'fecha_asignacion']
+        extra_kwargs = {
+            'instructor': {'write_only': True},
+            'curso': {'write_only': True},
+        }
+
+class ProgresoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Progreso
         fields = '__all__'
 
 class ModuloSerializer(serializers.ModelSerializer):
@@ -237,7 +258,7 @@ class PruebaConPreguntasSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Prueba
-        fields = ['curso', 'duracion', 'estaAprobado', 'calificacion', 'fechaEvaluacion', 'preguntas']
+        fields = '__all__' 
 
     def create(self, validated_data):
         preguntas_data = validated_data.pop('preguntas', [])
@@ -251,19 +272,8 @@ class PruebaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Prueba
-        fields = ['id', 'curso', 'duracion', 'estaAprobado', 'calificacion', 'fechaEvaluacion', 'curso_titulo']
+        fields = '__all__' 
 
     def get_curso_titulo(self, obj):
         return obj.curso.titulo if obj.curso else None
-class InstructorCursoSerializer(serializers.ModelSerializer):
-    instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
-    curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
-    curso_id=serializers.IntegerField(source='curso.id', read_only=True)
-
-    class Meta:
-        model = InstructorCurso
-        fields = ['id', 'instructor', 'instructor_email','curso_id', 'curso', 'curso_titulo', 'fecha_asignacion']
-        extra_kwargs = {
-            'instructor': {'write_only': True},
-            'curso': {'write_only': True},
-        }
+    

@@ -5,8 +5,19 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.http import HttpResponse, HttpResponseForbidden
 from .models import Progreso  
+from rest_framework import generics
+from django.http import HttpResponse, HttpResponseForbidden
+from .models import Progreso  
+from rest_framework import generics
+
 import uuid
 from django.contrib.auth.decorators import login_required
+from rest_framework.parsers import MultiPartParser, FormParser
+
+import uuid
+from django.contrib.auth.decorators import login_required
+from rest_framework.parsers import MultiPartParser, FormParser
+from .serializers import ProgresoDetailSerializer
 
 # Asegúrate de que 'Progreso' está definido en .models
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -17,19 +28,34 @@ from django.contrib.auth import authenticate
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework.decorators import api_view
 from django.core.exceptions import ValidationError
+from django.http import FileResponse, Http404
+from rest_framework.generics import ListAPIView
+from django.http import HttpResponse, HttpResponseForbidden
+from .models import Progreso  
+from rest_framework import generics
+from django.http import HttpResponse, HttpResponseForbidden
+from .models import Progreso  
+
+import uuid
+from django.contrib.auth.decorators import login_required
+from rest_framework.parsers import MultiPartParser, FormParser
+
+
+from django.db import IntegrityError
 from drf_yasg import openapi
 import logging
 from .models import (
-    Usuario, Administrador, Instructor, Estudiante,
-    Simulacion, Curso, Subcurso, Modulo, Empresa, Prueba, Pregunta, Certificado
+    Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso, Certificado, Pregunta, Prueba
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    ClienteDetailSerializer, LoginResponseSerializer, SimulacionSerializer,
-    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer, PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer,CertificadoSerializer
+    EstudianteDetailSerializer, LoginResponseSerializer, ProgresoSerializer,
+    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer, PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer, InstructorCursoSerializer,RegisterInstructorSerializer
+
 )
 from .utils.email import EmailService
+from django.http import FileResponse, Http404
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +126,7 @@ class AdministradorViewSet(viewsets.ModelViewSet):
     queryset = Administrador.objects.all()
     serializer_class = AdministradorSerializer
     permission_classes = [IsAdminUser]
+    permission_classes = [AllowAny]
 
     @action(detail=False, methods=['post'])
     def crear(self, request):
@@ -326,7 +353,8 @@ class ModificarInstructorAPIView(APIView):
                 codigoOrganizacion=instructor_anterior.codigoOrganizacion,
                 empresa=instructor_anterior.empresa,
                 fechaInicioCapacitacion=instructor_anterior.fechaInicioCapacitacion,
-                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion
+                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion,
+                debeCambiarContraseña=True
             )
 
             # Generar una contraseña temporal para el nuevo instructor
@@ -485,39 +513,106 @@ class LoginView(APIView):
             properties={
                 'email': openapi.Schema(type=openapi.TYPE_STRING, description='Email'),
                 'password': openapi.Schema(type=openapi.TYPE_STRING, description='Contraseña'),
-            }
+            },
+            required=['email', 'password']
         ),
-        responses={200: 'Detalle del usuario autenticado con token', 401: 'Credenciales inválidas'}
+        responses={
+            200: openapi.Response("Detalle del usuario autenticado con token"),
+            401: "Credenciales inválidas",
+            403: "Cuenta desactivada"
+        }
     )
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
 
         user = authenticate(request, email=email, password=password)
-
+        
         if user is not None:
+            
             if user.is_active:
                 # Identificar el rol del usuario
                 if user.rol == 'admin':
+                    user = Administrador.objects.get(id=user.id)  # Forzar subclase Administrador
                     serializer = AdministradorDetailSerializer(user)
                 elif user.rol == 'instructor':
+                    user = Instructor.objects.get(id=user.id)  # Forzar subclase Instructor
                     serializer = InstructorDetailSerializer(user)
                 elif user.rol == 'estudiante':
-                    serializer = ClienteDetailSerializer(user)
+                    user = Estudiante.objects.get(id=user.id)  # Forzar subclase Estudiante
+                    serializer = EstudianteDetailSerializer(user)
                 else:
-                    serializer = LoginResponseSerializer(user)
+                    return Response({'error': 'Rol no válido.'}, status=status.HTTP_400_BAD_REQUEST)
 
+
+                # Generar tokens
                 refresh = RefreshToken.for_user(user)
 
+                # Respuesta
                 response_data = serializer.data
                 response_data['refresh'] = str(refresh)
                 response_data['access'] = str(refresh.access_token)
+
+                # Agregar `debeCambiarContraseña` solo si es un instructor
+                if user.rol == 'instructor':
+                    response_data['debeCambiarContraseña'] = user.debeCambiarContraseña
 
                 return Response(response_data, status=status.HTTP_200_OK)
             else:
                 return Response({'error': 'Cuenta desactivada'}, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({'error': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+class CambiarContraseñaAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Permite al usuario autenticado cambiar su contraseña.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'old_password': openapi.Schema(type=openapi.TYPE_STRING, description='Contraseña actual'),
+                'new_password': openapi.Schema(type=openapi.TYPE_STRING, description='Nueva contraseña'),
+            },
+            required=['old_password', 'new_password']
+        ),
+        responses={
+            200: openapi.Response("Contraseña cambiada exitosamente."),
+            400: "Error en la solicitud (contraseña incorrecta o campos faltantes)."
+        }
+    )
+    def post(self, request):
+        user = request.user  # Usuario autenticado obtenido del token JWT
+        old_password = request.data.get('old_password')
+        new_password = request.data.get('new_password')
+
+        # Validar contraseñas ingresadas
+        if not old_password or not new_password:
+            return Response({'error': 'Ambos campos (old_password y new_password) son requeridos.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Verificar que la contraseña antigua sea correcta
+        if not user.check_password(old_password):
+            return Response({'error': 'La contraseña antigua no es correcta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.check_password(new_password):
+            return Response({'error': 'La nueva contraseña no puede ser igual a la contraseña actual.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Cambiar la contraseña
+        user.set_password(new_password)
+        user.save()
+
+        # Verificar si es un instructor para actualizar `debeCambiarContraseña`
+        if user.rol == 'instructor':
+            try:
+                instructor = Instructor.objects.get(id=user.id)
+                instructor.debeCambiarContraseña = False
+                instructor.save()
+            except Instructor.DoesNotExist:
+                return Response({'error': 'Instructor no encontrado.'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response({'message': 'Contraseña cambiada exitosamente.'}, status=status.HTTP_200_OK)
 
 
 class CursoViewSet(viewsets.ModelViewSet):
@@ -583,11 +678,7 @@ class ModulosPorSubcursoAPIView(APIView):
         serializer = ModuloSerializer(modulos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-class SimulacionViewSet(viewsets.ModelViewSet):
-    authentication_classes = [JWTAuthentication]
-    queryset = Simulacion.objects.all()
-    serializer_class = SimulacionSerializer
-    permission_classes = [IsAuthenticated] 
+
 
 class PruebaViewSet(viewsets.ModelViewSet):
     queryset = Prueba.objects.all()
@@ -597,17 +688,25 @@ class PruebaViewSet(viewsets.ModelViewSet):
         if self.action == 'create':
             return PruebaConPreguntasSerializer
         return PruebaSerializer
+
 class PreguntaViewSet(viewsets.ModelViewSet):
     queryset = Pregunta.objects.all()
     serializer_class = PreguntaSerializer
-    permission_classes = [IsAdminUser]
 
     def get_queryset(self):
-        queryset = super().get_queryset()
-        prueba_id = self.request.query_params.get('prueba', None)
+        prueba_id = self.request.query_params.get('prueba')
         if prueba_id:
-            queryset = queryset.filter(prueba_id=prueba_id)
-        return queryset
+            return self.queryset.filter(prueba_id=prueba_id)
+        return self.queryset
+class PreguntaListView(generics.ListAPIView):
+    serializer_class = PreguntaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        prueba_id = self.request.query_params.get('prueba')
+        if prueba_id:
+            return Pregunta.objects.filter(prueba_id=prueba_id)
+        return Pregunta.objects.none()
 
 @api_view(['POST'])
 def completar_modulo(request, modulo_id):
@@ -672,3 +771,288 @@ def emitir_certificado(request, curso_id):
         <p>Fecha de Emisión: {cert.fechaEmision}</p>
     """
     return HttpResponse(respuesta)
+
+class DescargarArchivoModuloAPIView(APIView):
+    permission_classes = [IsAuthenticated]  # Cambia a [AllowAny] si no requiere autenticación
+
+    def get(self, request, pk, *args, **kwargs):
+        try:
+            # Obtener el módulo por su ID
+            modulo = Modulo.objects.get(pk=pk)
+
+            # Verificar si el módulo tiene un archivo asociado
+            if not modulo.archivo:
+                return Response({"error": "Este módulo no tiene un archivo asociado."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Retornar el archivo como respuesta
+            archivo = modulo.archivo.path
+            response = FileResponse(open(archivo, 'rb'), content_type='application/octet-stream')
+            response['Content-Disposition'] = f'inline; filename="{modulo.archivo.name}"'
+            return response
+
+        except Modulo.DoesNotExist:
+            raise Http404("Módulo no encontrado.")
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+
+
+class InstructorCursoAPIView(APIView):
+    """
+    API para gestionar las relaciones entre instructores y cursos.
+    """
+
+    @swagger_auto_schema(
+        operation_description="Obtiene todas las relaciones entre instructores y cursos o filtra por instructor y curso.",
+        manual_parameters=[
+            openapi.Parameter('instructor', openapi.IN_QUERY, description="ID del instructor", type=openapi.TYPE_INTEGER),
+            openapi.Parameter('curso', openapi.IN_QUERY, description="ID del curso", type=openapi.TYPE_INTEGER),
+        ],
+        responses={200: InstructorCursoSerializer(many=True)}
+    )
+    def get(self, request):
+        instructor_id = request.query_params.get('instructor')
+        curso_id = request.query_params.get('curso')
+
+        # Filtrar por los parámetros proporcionados
+        if instructor_id and curso_id:
+            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id, curso_id=curso_id)
+        elif instructor_id:
+            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id)
+        elif curso_id:
+            relaciones = InstructorCurso.objects.filter(curso_id=curso_id)
+        else:
+            relaciones = InstructorCurso.objects.all()
+
+        serializer = InstructorCursoSerializer(relaciones, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @swagger_auto_schema(
+        operation_description="Crea una nueva relación entre un instructor y un curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
+                'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['instructor', 'curso']
+        ),
+        responses={
+            201: openapi.Response('Relación creada exitosamente.', InstructorCursoSerializer),
+            400: 'Error en los datos enviados.',
+            500: 'Error interno del servidor.',
+        }
+    )
+    def post(self, request):
+        instructor_id = request.data.get('instructor')
+        curso_id = request.data.get('curso')
+
+        # Validar datos
+        if not instructor_id or not curso_id:
+            return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Crear la relación entre instructor y curso
+            relacion = InstructorCurso.objects.create(instructor_id=instructor_id, curso_id=curso_id)
+
+            # Obtener el código de organización del instructor
+            codigo_organizacion = relacion.instructor.codigoOrganizacion
+
+            # Obtener los estudiantes asociados al código de organización
+            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+            # Crear los registros de progreso para los estudiantes
+            Progreso.objects.bulk_create([
+                Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
+                for estudiante in estudiantes
+            ])
+
+            return Response({"message": "Relación creada exitosamente."}, status=status.HTTP_201_CREATED)
+        except IntegrityError:
+            return Response({"error": "La relación entre el instructor y el curso ya existe."}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+													  
+				 
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @swagger_auto_schema(
+        operation_description="Elimina una relación entre un instructor y un curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
+                'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['instructor', 'curso']
+        ),
+        responses={
+            200: openapi.Response('Relación eliminada exitosamente.'),
+            400: 'Error en los datos enviados.',
+            404: 'Relación no encontrada.',
+        }
+    )
+    def delete(self, request):
+        instructor_id = request.data.get('instructor')
+        curso_id = request.data.get('curso')
+
+        if not instructor_id or not curso_id:
+							
+            return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+												  
+			 
+
+        try:
+            # Obtener la relación
+            relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
+
+            # Obtener el código de organización del instructor
+            codigo_organizacion = relacion.instructor.codigoOrganizacion
+
+            # Obtener los estudiantes asociados al código de organización
+            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+            # Eliminar los registros de progreso relacionados con los estudiantes y el curso
+            Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
+
+            # Eliminar la relación entre instructor y curso
+            relacion.delete()
+
+            return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
+        except InstructorCurso.DoesNotExist:
+            return Response({"error": "La relación entre el instructor y el curso no fue encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class EstudiantesPorCodigoOrganizacionAPIView(APIView):
+    """
+    API para buscar estudiantes por código de organización.
+    """
+    @swagger_auto_schema(
+        operation_description="Busca estudiantes asociados a un código de organización.",
+        manual_parameters=[
+            openapi.Parameter(
+                'codigoOrganizacion',
+                openapi.IN_QUERY,
+                description="Código de organización del instructor",
+                type=openapi.TYPE_STRING,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response("Estudiantes encontrados.", EstudianteSerializer(many=True)),
+            400: "Código de organización no proporcionado.",
+            404: "No se encontraron estudiantes para el código de organización proporcionado.",
+        }
+    )
+    def get(self, request):
+        codigo_organizacion = request.query_params.get('codigoOrganizacion')
+
+        # Validar que el parámetro sea proporcionado
+        if not codigo_organizacion:
+            return Response(
+                {"error": "El parámetro 'codigoOrganizacion' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Buscar estudiantes por código de organización
+        estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+        if estudiantes.exists():
+            serializer = EstudianteSerializer(estudiantes, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            return Response(
+                {"message": "No se encontraron estudiantes para el código de organización proporcionado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+		
+												
+										
+class ProgresoViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = Progreso.objects.all()
+    serializer_class = ProgresoSerializer
+    permission_classes = [IsAuthenticated]
+
+class EmitirCertificadoAPIView(APIView):
+    """
+    API para emitir un certificado basado en el progreso del estudiante.
+    """
+    @swagger_auto_schema(
+        operation_description="Emitir un certificado para un estudiante basado en el progreso completado del curso.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del estudiante'),
+                'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+            },
+            required=['estudiante_id', 'curso_id']
+        ),
+        responses={
+            201: openapi.Response("Certificado emitido exitosamente."),
+            200: openapi.Response("El certificado ya ha sido emitido."),
+            400: openapi.Response("Error en los datos o progreso incompleto."),
+            404: openapi.Response("Estudiante o curso no encontrado."),
+        }
+    )
+    def post(self, request):
+        estudiante_id = request.data.get('estudiante_id')
+        curso_id = request.data.get('curso_id')
+
+        # Validar los parámetros
+        if not estudiante_id or not curso_id:
+            return Response({"error": "Los campos 'estudiante_id' y 'curso_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener estudiante y curso
+        try:
+            estudiante = Estudiante.objects.get(id=estudiante_id)
+            curso = Curso.objects.get(id=curso_id)
+        except Estudiante.DoesNotExist:
+            return Response({"error": "Estudiante no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except Curso.DoesNotExist:
+            return Response({"error": "Curso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Emitir el certificado
+        resultado = Certificado.emitir_certificado(estudiante, curso)
+        if resultado == "El estudiante no ha completado el curso.":
+            return Response({"error": resultado}, status=status.HTTP_400_BAD_REQUEST)
+        if resultado == "El certificado ya ha sido emitido.":
+            return Response({"message": resultado}, status=status.HTTP_200_OK)
+
+        return Response({"message": resultado}, status=status.HTTP_201_CREATED)
+    
+class EstudianteDashboardAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        # Verificar que el usuario sea un estudiante
+        if not hasattr(user, 'rol') or user.rol != 'estudiante':
+            return Response({"detail": "No autorizado"}, status=403)
+
+        # Obtener los progresos del estudiante
+        progresos = Progreso.objects.filter(estudiante=user)
+
+        if not progresos.exists():
+            return Response({"detail": "No hay cursos asignados."}, status=404)
+
+        # Serializar los datos de progreso y curso
+        cursos_con_progreso = [
+            {
+                "curso": {
+                    "id": progreso.curso.id,
+                    "titulo": progreso.curso.titulo,
+                    "descripcion": progreso.curso.descripcion,
+                },
+                "progreso": {
+                    "porcentajeCompletado": progreso.porcentajeCompletado,
+                    "completado": progreso.completado,
+                    "fechaInicioCurso": progreso.fechaInicioCurso,
+                    "fechaFinCurso": progreso.fechaFinCurso,
+                },
+            }
+            for progreso in progresos
+        ]
+
+        return Response({"cursos": cursos_con_progreso}, status=200)
