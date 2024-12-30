@@ -235,17 +235,13 @@ class Modulo(models.Model):
 
 # Clase Prueba
 class Prueba(models.Model):
-    curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name="pruebas")
+    curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='prueba', null=True)
     duracion = models.IntegerField()
     fechaCreacion = models.DateField()
 
     class Meta:
         verbose_name = "Prueba"
         verbose_name_plural = "Pruebas"
-    
-
-    def __str__(self):
-        return f"Prueba del curso: {self.curso.titulo} - {'Aprobada' if self.estaAprobado else 'No Aprobada'}"
 
 # Clase Progreso (tabla intermedia entre Curso y Estudiante)
 class Progreso(models.Model):
@@ -255,23 +251,19 @@ class Progreso(models.Model):
     contenidoCompletado = models.BooleanField(null=True)
     completado = models.BooleanField(default=False)
     porcentajeCompletado = models.FloatField(default=0)
-    fechaInicioCurso=models.DateField(auto_now_add=True,null=True)
-    fechaFinCurso=models.DateField(null=True)
+    fechaInicioCurso = models.DateField(auto_now_add=True, null=True)
+    fechaFinCurso = models.DateField(null=True)
     _skip_post_save = False
 
     class Meta:
         verbose_name = "Progreso"
         verbose_name_plural = "Progresos"
 
-    def __str__(self):
-        return f"{self.estudiante.email} - {self.curso.titulo}: {self.porcentajeCompletado}% completado"
-    
     def calcular_porcentaje_completado(self):
         """
-        Calcula el porcentaje completado del curso basado en las condiciones definidas.
+        Calcula el porcentaje completado del curso basado en la simulación,
+        el contenido y las pruebas.
         """
-        
-        # Obtener datos necesarios
         prueba = EstudiantePrueba.objects.filter(estudiante=self.estudiante, prueba__curso=self.curso).first()
         esta_aprobado = prueba.estaAprobado if prueba else False
 
@@ -291,12 +283,9 @@ class Progreso(models.Model):
             ])
             self.porcentajeCompletado = (completado_total / 2) * 100
 
-        # Actualizar campo `completado`
         self.completado = self.porcentajeCompletado == 100
-
-        self._skip_post_save = True  # Evita disparar la señal
         self.save()
-        self._skip_post_save = False
+
 
 
 class Estudiante(Usuario):
@@ -381,12 +370,27 @@ class EstudiantePrueba(models.Model):
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name="progresos")
     estaAprobado = models.BooleanField(default=False)
     calificacion = models.FloatField(default=0.0)
-    intento=models.IntegerField(default=0)
-    fechaPrueba=models.DateField(auto_now_add=True)
+    intento = models.IntegerField(default=0)
+    fechaPrueba = models.DateField(auto_now_add=True)
 
     class Meta:
-     unique_together = ('estudiante', 'prueba')
-     unique_together = ('estudiante', 'prueba')
+        unique_together = ('estudiante', 'prueba')
+
+    def calificar(self, respuestas_estudiante):
+        """
+        Califica la prueba basándose en las respuestas correctas.
+        """
+        preguntas = self.prueba.preguntas.all()
+        respuestas_correctas = 0
+        for pregunta in preguntas:
+            if pregunta.respuestaCorrecta == respuestas_estudiante.get(str(pregunta.id)):
+                respuestas_correctas += 1
+
+        self.calificacion = (respuestas_correctas / preguntas.count()) * 100
+        self.estaAprobado = self.calificacion >= 60  # Ejemplo: 60% es el mínimo para aprobar
+        self.intento += 1
+        self.save()
+
 
 class Certificado(models.Model):
     estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="certificados",null=True)
@@ -443,11 +447,15 @@ class Certificado(models.Model):
 
 
 class Pregunta(models.Model):
-    pregunta = models.CharField(max_length=255)
-    opcionesRespuestas = models.TextField()
+    prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
+    pregunta = models.TextField()
+    opcionesRespuestas = models.TextField()  # Considerar usar un campo JSON si necesitas más estructura
     respuestaCorrecta = models.CharField(max_length=255)
     puntajePregunta = models.IntegerField()
-    prueba = models.ForeignKey('Prueba', related_name='preguntas', on_delete=models.CASCADE)
+
+    class Meta:
+        verbose_name = "Pregunta"
+        verbose_name_plural = "Preguntas"
 
     def __str__(self):
-        return self.pregunta
+        return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres

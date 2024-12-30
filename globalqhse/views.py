@@ -14,8 +14,9 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from drf_yasg import openapi
 from rest_framework import generics
-
+from django.db import transaction
 from django.db import models
+from datetime import date
 
 import logging
 from .models import (
@@ -912,7 +913,6 @@ class EstudiantePruebaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
 
-
 class EmitirCertificadoAPIView(APIView):
     """
     API para emitir un certificado basado en el progreso del estudiante.
@@ -959,6 +959,65 @@ class EmitirCertificadoAPIView(APIView):
             return Response({"message": resultado}, status=status.HTTP_200_OK)
 
         return Response({"message": resultado}, status=status.HTTP_201_CREATED)
+        
+class PruebaViewSet(viewsets.ModelViewSet):
+    queryset = Prueba.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    serializer_class = PruebaSerializer
+
+    @action(detail=False, methods=['get'], url_path='por-estudiante')
+    def pruebas_por_estudiante(self, request):
+        """
+        Retorna las pruebas asociadas a los cursos de un estudiante.
+        """
+        estudiante_id = request.query_params.get('estudiante_id')
+        if not estudiante_id:
+            return Response(
+                {"error": "El parámetro 'estudiante_id' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        estudiante = Estudiante.objects.get(id=estudiante_id)
+        progreso = Progreso.objects.filter(estudiante=estudiante).values_list('curso', flat=True)
+        pruebas = Prueba.objects.filter(curso__in=progreso)
+        serializer = PruebaSerializer(pruebas, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PreguntaViewSet(viewsets.ModelViewSet):
+    queryset = Pregunta.objects.all()
+    serializer_class = PreguntaSerializer
+
+    def create(self, request, *args, **kwargs):
+        if isinstance(request.data, list):  # Verificar si el cuerpo es una lista
+            serializer = self.get_serializer(data=request.data, many=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return super().create(request, *args, **kwargs)
+    
+
+class PreguntaListView(generics.ListAPIView):
+    serializer_class = PreguntaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        prueba_id = self.request.query_params.get('prueba')
+        if prueba_id:
+            return Pregunta.objects.filter(prueba_id=prueba_id)
+        return Pregunta.objects.none()
+
+@api_view(['POST'])
+def completar_modulo(request, modulo_id):
+    """Vista para marcar un módulo como completado y actualizar el progreso del subcurso."""
+    modulo = get_object_or_404(Modulo, id=modulo_id)
+    modulo.completado = True
+    modulo.save()
+
+    # Actualizar progreso del subcurso
+    modulo.subcurso.actualizar_progreso()
+
+    return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
 
 class CertificadoAPIView(APIView):
     """
@@ -1040,59 +1099,46 @@ class CertificadoAPIView(APIView):
                 {"error": "El archivo PDF no se encontró en el servidor."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
-class PruebaViewSet(viewsets.ModelViewSet):
-    queryset = Prueba.objects.all()
+        
+class ActualizarEstudiantePruebaAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get_serializer_class(self):
-        if self.action == 'create':
-            return PruebaConPreguntasSerializer
-        elif self.action == 'add_preguntas':
-            return PreguntaParaPruebaExistenteSerializer
-        return PruebaSerializer
+    @swagger_auto_schema(
+        operation_description="Califica una prueba basada en las respuestas del estudiante.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del estudiante"),
+                'prueba_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID de la prueba"),
+                'respuestas': openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    description="Respuestas del estudiante, con el ID de la pregunta como clave y la respuesta seleccionada como valor."
+                ),
+            },
+            required=['estudiante_id', 'prueba_id', 'respuestas']
+        ),
+        responses={
+            200: "Prueba calificada exitosamente.",
+            400: "Error en la calificación."
+        }
+    )
+    def post(self, request):
+        estudiante_id = request.data.get('estudiante_id')
+        prueba_id = request.data.get('prueba_id')
+        respuestas = request.data.get('respuestas')
 
-    @action(detail=True, methods=['post'])
-    def add_preguntas(self, request, pk=None):
-        prueba = self.get_object()
-        serializer = self.get_serializer(data=request.data, many=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save(prueba=prueba)
-        return Response(serializer.data)
+        if not estudiante_id or not prueba_id or not respuestas:
+            return Response(
+                {"error": "Estudiante, prueba y respuestas son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-class PreguntaViewSet(viewsets.ModelViewSet):
-    queryset = Pregunta.objects.all()
-    serializer_class = PreguntaSerializer
+        estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
 
-    def create(self, request, *args, **kwargs):
-        if isinstance(request.data, list):  # Verificar si el cuerpo es una lista
-            serializer = self.get_serializer(data=request.data, many=True)
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return super().create(request, *args, **kwargs)
-    
+        estudiante_prueba.calificar(respuestas)
 
-class PreguntaListView(generics.ListAPIView):
-    serializer_class = PreguntaSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        prueba_id = self.request.query_params.get('prueba')
-        if prueba_id:
-            return Pregunta.objects.filter(prueba_id=prueba_id)
-        return Pregunta.objects.none()
-
-@api_view(['POST'])
-def completar_modulo(request, modulo_id):
-    """Vista para marcar un módulo como completado y actualizar el progreso del subcurso."""
-    modulo = get_object_or_404(Modulo, id=modulo_id)
-    modulo.completado = True
-    modulo.save()
-
-    # Actualizar progreso del subcurso
-    modulo.subcurso.actualizar_progreso()
-
-    return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
-
+        return Response({
+            "calificacion": estudiante_prueba.calificacion,
+            "estaAprobado": estudiante_prueba.estaAprobado
+        }, status=status.HTTP_200_OK)

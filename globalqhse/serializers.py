@@ -228,6 +228,7 @@ class ModuloSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.archivo.url)
         return None
 
+
 class InstructorCursoSerializer(serializers.ModelSerializer):
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
     curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
@@ -250,7 +251,7 @@ class ProgresoSerializer(serializers.ModelSerializer):
 class EstudiantePruebaSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstudiantePrueba
-        fields = '__all__'
+        fields = ['estaAprobado', 'calificacion']
 
 
 class PreguntaSerializer(serializers.ModelSerializer):
