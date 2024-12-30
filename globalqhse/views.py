@@ -13,15 +13,19 @@ from rest_framework.decorators import api_view
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from drf_yasg import openapi
+from rest_framework import generics
+
+from django.db import models
+
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba
+    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba, Prueba, Pregunta
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    EstudianteDetailSerializer, LoginResponseSerializer, EstudiantePruebaSerializer,
+    EstudianteDetailSerializer, LoginResponseSerializer, EstudiantePruebaSerializer,  PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer,PreguntaParaPruebaExistenteSerializer,
     SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer,ProgresoSerializer
 )
 from .utils.email import EmailService
@@ -96,7 +100,7 @@ class AdministradorViewSet(viewsets.ModelViewSet):
     queryset = Administrador.objects.all()
     serializer_class = AdministradorSerializer
     permission_classes = [IsAdminUser]
-    #permission_classes = [AllowAny]
+    permission_classes = [AllowAny]
 
     @action(detail=False, methods=['post'])
     def crear(self, request):
@@ -1036,3 +1040,59 @@ class CertificadoAPIView(APIView):
                 {"error": "El archivo PDF no se encontró en el servidor."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class PruebaViewSet(viewsets.ModelViewSet):
+    queryset = Prueba.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == 'create':
+            return PruebaConPreguntasSerializer
+        elif self.action == 'add_preguntas':
+            return PreguntaParaPruebaExistenteSerializer
+        return PruebaSerializer
+
+    @action(detail=True, methods=['post'])
+    def add_preguntas(self, request, pk=None):
+        prueba = self.get_object()
+        serializer = self.get_serializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(prueba=prueba)
+        return Response(serializer.data)
+
+class PreguntaViewSet(viewsets.ModelViewSet):
+    queryset = Pregunta.objects.all()
+    serializer_class = PreguntaSerializer
+
+    def create(self, request, *args, **kwargs):
+        if isinstance(request.data, list):  # Verificar si el cuerpo es una lista
+            serializer = self.get_serializer(data=request.data, many=True)
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return super().create(request, *args, **kwargs)
+    
+
+class PreguntaListView(generics.ListAPIView):
+    serializer_class = PreguntaSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        prueba_id = self.request.query_params.get('prueba')
+        if prueba_id:
+            return Pregunta.objects.filter(prueba_id=prueba_id)
+        return Pregunta.objects.none()
+
+@api_view(['POST'])
+def completar_modulo(request, modulo_id):
+    """Vista para marcar un módulo como completado y actualizar el progreso del subcurso."""
+    modulo = get_object_or_404(Modulo, id=modulo_id)
+    modulo.completado = True
+    modulo.save()
+
+    # Actualizar progreso del subcurso
+    modulo.subcurso.actualizar_progreso()
+
+    return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
+

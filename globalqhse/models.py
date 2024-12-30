@@ -233,20 +233,19 @@ class Modulo(models.Model):
 
 
 
-
-
 # Clase Prueba
 class Prueba(models.Model):
-    curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='prueba', null=True)
+    curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name="pruebas")
     duracion = models.IntegerField()
     fechaCreacion = models.DateField()
 
     class Meta:
         verbose_name = "Prueba"
         verbose_name_plural = "Pruebas"
+    
 
-
-
+    def __str__(self):
+        return f"Prueba del curso: {self.curso.titulo} - {'Aprobada' if self.estaAprobado else 'No Aprobada'}"
 
 # Clase Progreso (tabla intermedia entre Curso y Estudiante)
 class Progreso(models.Model):
@@ -300,7 +299,6 @@ class Progreso(models.Model):
         self._skip_post_save = False
 
 
-
 class Estudiante(Usuario):
     
     codigoOrganizacion = models.CharField(max_length=100, blank=False)
@@ -323,7 +321,8 @@ class Estudiante(Usuario):
     @classmethod
     def crear_estudiante_con_cursos(cls, email, password, codigoOrganizacion, **kwargs):
         """
-        Crea un estudiante y lo inscribe automáticamente en los cursos de su instructor.
+        Crea un estudiante, lo inscribe automáticamente en los cursos de su instructor,
+        y registra las pruebas asociadas en la tabla EstudiantePrueba.
         """
         try:
             # Verificar que el código de organización es válido
@@ -343,10 +342,31 @@ class Estudiante(Usuario):
                 cursos = Curso.objects.filter(
                     instructores_asignados__instructor__codigoOrganizacion=codigoOrganizacion
                 )
-                Progreso.objects.bulk_create([
-                    Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0,simulacionCompletada=False)
-                    for curso in cursos
-                ])
+                progreso_records = []
+                estudiante_prueba_records = []
+
+                for curso in cursos:
+                    # Crear registros de progreso
+                    progreso_records.append(
+                        Progreso(
+                            estudiante=estudiante,
+                            curso=curso,
+                            completado=False,
+                            porcentajeCompletado=0,
+                            simulacionCompletada=False
+                        )
+                    )
+
+                    # Buscar pruebas asociadas al curso y crear registros de EstudiantePrueba
+                    pruebas = Prueba.objects.filter(curso=curso)
+                    for prueba in pruebas:
+                        estudiante_prueba_records.append(
+                            EstudiantePrueba(estudiante=estudiante, prueba=prueba)
+                        )
+
+                # Guardar registros en la base de datos
+                Progreso.objects.bulk_create(progreso_records)
+                EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
 
             return estudiante
 
@@ -354,6 +374,7 @@ class Estudiante(Usuario):
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         except Exception as e:
             raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
+
 
 class EstudiantePrueba(models.Model):
     estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="progresos_prueba")
@@ -364,7 +385,8 @@ class EstudiantePrueba(models.Model):
     fechaPrueba=models.DateField(auto_now_add=True)
 
     class Meta:
-        unique_together = ('estudiante', 'prueba')
+     unique_together = ('estudiante', 'prueba')
+     unique_together = ('estudiante', 'prueba')
 
 class Certificado(models.Model):
     estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="certificados",null=True)
@@ -419,18 +441,13 @@ class Certificado(models.Model):
             return f"Error al emitir el certificado: {str(e)}"
 
 
+
 class Pregunta(models.Model):
-    prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
-    pregunta = models.TextField()
-    opcionesRespuestas = models.TextField()  # Considerar usar un campo JSON si necesitas más estructura
+    pregunta = models.CharField(max_length=255)
+    opcionesRespuestas = models.TextField()
     respuestaCorrecta = models.CharField(max_length=255)
     puntajePregunta = models.IntegerField()
-
-    class Meta:
-        verbose_name = "Pregunta"
-        verbose_name_plural = "Preguntas"
+    prueba = models.ForeignKey('Prueba', related_name='preguntas', on_delete=models.CASCADE)
 
     def __str__(self):
-        return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres
-
-
+        return self.pregunta

@@ -10,7 +10,7 @@ from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
-from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView
+from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView, PreguntaViewSet, PruebaViewSet
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 
 from .views import DescargarArchivoModuloAPIView
@@ -27,7 +27,8 @@ router.register(r'subcursos',SubcursoViewSet)
 router.register(r'modulos',ModuloViewSet)
 router.register(r'progreso',ProgresoViewSet)
 router.register(r'estudiantePrueba',EstudiantePruebaViewSet)
-
+router.register(r'pruebas', PruebaViewSet, basename='pruebas')  # Solo una vez
+router.register(r'preguntas', PreguntaViewSet, basename='preguntas')  # Usar ViewSet para CRUD completo
 schema_view = get_schema_view(
    openapi.Info(
       title="API de Capacitaciones Global QHSE",
@@ -62,7 +63,7 @@ urlpatterns = [
     path('estudiante-codigoOrganizacion/', EstudiantesPorCodigoOrganizacionAPIView.as_view(), name='estudiante_codigoOrganizacion'),
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
     path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
-
+   
    
    
 ]
