@@ -323,7 +323,8 @@ class Estudiante(Usuario):
     @classmethod
     def crear_estudiante_con_cursos(cls, email, password, codigoOrganizacion, **kwargs):
         """
-        Crea un estudiante y lo inscribe automáticamente en los cursos de su instructor.
+        Crea un estudiante, lo inscribe automáticamente en los cursos de su instructor,
+        y registra las pruebas asociadas en la tabla EstudiantePrueba.
         """
         try:
             # Verificar que el código de organización es válido
@@ -343,10 +344,31 @@ class Estudiante(Usuario):
                 cursos = Curso.objects.filter(
                     instructores_asignados__instructor__codigoOrganizacion=codigoOrganizacion
                 )
-                Progreso.objects.bulk_create([
-                    Progreso(estudiante=estudiante, curso=curso, completado=False, porcentajeCompletado=0,simulacionCompletada=False)
-                    for curso in cursos
-                ])
+                progreso_records = []
+                estudiante_prueba_records = []
+
+                for curso in cursos:
+                    # Crear registros de progreso
+                    progreso_records.append(
+                        Progreso(
+                            estudiante=estudiante,
+                            curso=curso,
+                            completado=False,
+                            porcentajeCompletado=0,
+                            simulacionCompletada=False
+                        )
+                    )
+
+                    # Buscar pruebas asociadas al curso y crear registros de EstudiantePrueba
+                    pruebas = Prueba.objects.filter(curso=curso)
+                    for prueba in pruebas:
+                        estudiante_prueba_records.append(
+                            EstudiantePrueba(estudiante=estudiante, prueba=prueba)
+                        )
+
+                # Guardar registros en la base de datos
+                Progreso.objects.bulk_create(progreso_records)
+                EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
 
             return estudiante
 

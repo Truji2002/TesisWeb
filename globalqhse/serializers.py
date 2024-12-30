@@ -219,7 +219,7 @@ class ModuloSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Modulo
-        fields = ['id', 'nombre', 'enlace', 'archivo_url','subcurso']  # Incluye otros campos relevantes
+        fields = ['id', 'nombre', 'enlace', 'archivo_url','subcurso','archivo']  # Incluye otros campos relevantes
 
     def get_archivo_url(self, obj):
         request = self.context.get('request')  # Asegúrate de pasar el `request` al serializer en la vista
@@ -250,4 +250,4 @@ class ProgresoSerializer(serializers.ModelSerializer):
 class EstudiantePruebaSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstudiantePrueba
-        fields = '__all__'
+        fields = ['estaAprobado', 'calificacion', 'intento', 'fechaPrueba']

@@ -13,10 +13,11 @@ from rest_framework.decorators import api_view
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from drf_yasg import openapi
+from django.db import transaction
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba
+    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba,Prueba
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
@@ -760,20 +761,37 @@ class InstructorCursoAPIView(APIView):
             return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Crear la relación entre instructor y curso
-            relacion = InstructorCurso.objects.create(instructor_id=instructor_id, curso_id=curso_id)
+            with transaction.atomic():
+                # Crear la relación entre instructor y curso
+                relacion = InstructorCurso.objects.create(instructor_id=instructor_id, curso_id=curso_id)
 
-            # Obtener el código de organización del instructor
-            codigo_organizacion = relacion.instructor.codigoOrganizacion
+                # Obtener el código de organización del instructor
+                codigo_organizacion = relacion.instructor.codigoOrganizacion
 
-            # Obtener los estudiantes asociados al código de organización
-            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+                # Obtener los estudiantes asociados al código de organización
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-            # Crear los registros de progreso para los estudiantes
-            Progreso.objects.bulk_create([
-                Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
-                for estudiante in estudiantes
-            ])
+                # Crear los registros de progreso para los estudiantes
+                progreso_records = []
+                estudiante_prueba_records = []
+
+                for estudiante in estudiantes:
+                    # Crear registro de progreso
+                    progreso_records.append(
+                        Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
+                    )
+
+                    # Buscar pruebas asociadas al curso
+                    pruebas = Prueba.objects.filter(curso_id=curso_id)
+                    for prueba in pruebas:
+                        # Crear registro de EstudiantePrueba
+                        estudiante_prueba_records.append(
+                            EstudiantePrueba(estudiante=estudiante, prueba=prueba)
+                        )
+
+                # Guardar los registros en la base de datos
+                Progreso.objects.bulk_create(progreso_records)
+                EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
 
             return Response({"message": "Relación creada exitosamente."}, status=status.HTTP_201_CREATED)
         except IntegrityError:
@@ -805,20 +823,27 @@ class InstructorCursoAPIView(APIView):
             return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Obtener la relación
-            relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
+            with transaction.atomic():
+                # Obtener la relación
+                relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
 
-            # Obtener el código de organización del instructor
-            codigo_organizacion = relacion.instructor.codigoOrganizacion
+                # Obtener el código de organización del instructor
+                codigo_organizacion = relacion.instructor.codigoOrganizacion
 
-            # Obtener los estudiantes asociados al código de organización
-            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+                # Obtener los estudiantes asociados al código de organización
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-            # Eliminar los registros de progreso relacionados con los estudiantes y el curso
-            Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
+                # Eliminar los registros de progreso relacionados con los estudiantes y el curso
+                Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
 
-            # Eliminar la relación entre instructor y curso
-            relacion.delete()
+                # Obtener las pruebas relacionadas con el curso
+                pruebas = Prueba.objects.filter(curso_id=curso_id)
+
+                # Eliminar los registros de EstudiantePrueba relacionados
+                EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
+
+                # Eliminar la relación entre instructor y curso
+                relacion.delete()
 
             return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
         except InstructorCurso.DoesNotExist:
@@ -1036,3 +1061,25 @@ class CertificadoAPIView(APIView):
                 {"error": "El archivo PDF no se encontró en el servidor."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+class ActualizarEstudiantePruebaAPIView(APIView):
+    """
+    API para actualizar los campos de un registro de EstudiantePrueba.
+    """
+    def put(self, request):
+        estudiante_id = request.data.get('estudiante_id')
+        prueba_id = request.data.get('prueba_id')
+
+        # Validar los parámetros
+        if not estudiante_id or not prueba_id:
+            return Response({"error": "Los campos 'estudiante_id' y 'prueba_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener el registro
+        estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
+
+        # Serializar y validar los datos
+        serializer = EstudiantePruebaSerializer(estudiante_prueba, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()  # Actualizar el registro
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

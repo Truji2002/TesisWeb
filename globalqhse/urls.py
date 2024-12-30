@@ -13,7 +13,7 @@ from .views import CambiarContraseñaAPIView
 from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 
-from .views import DescargarArchivoModuloAPIView
+from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView
 
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
@@ -62,6 +62,7 @@ urlpatterns = [
     path('estudiante-codigoOrganizacion/', EstudiantesPorCodigoOrganizacionAPIView.as_view(), name='estudiante_codigoOrganizacion'),
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
     path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
+    path('actualizar-prueba/', ActualizarEstudiantePruebaAPIView.as_view(), name='actualizar_prueba'),
 
    
    
