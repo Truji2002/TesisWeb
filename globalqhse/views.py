@@ -14,6 +14,8 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from drf_yasg import openapi
 from django.db import transaction
+from datetime import date
+
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
@@ -1066,6 +1068,36 @@ class ActualizarEstudiantePruebaAPIView(APIView):
     """
     API para actualizar los campos de un registro de EstudiantePrueba.
     """
+    @swagger_auto_schema(
+        operation_description="Actualizar los campos de un registro de EstudiantePrueba basado en estudiante_id y prueba_id.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            required=['estudiante_id', 'prueba_id'],
+            properties={
+                'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del estudiante"),
+                'prueba_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID de la prueba"),
+                'estaAprobado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de aprobación del estudiante (opcional)"),
+                'calificacion': openapi.Schema(type=openapi.TYPE_NUMBER, description="Calificación obtenida por el estudiante (opcional)")
+                
+            }
+        ),
+        responses={
+            200: openapi.Response(
+                description="Registro actualizado correctamente.",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'estaAprobado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de aprobación del estudiante"),
+                        'calificacion': openapi.Schema(type=openapi.TYPE_NUMBER, description="Calificación obtenida"),
+                        'intento': openapi.Schema(type=openapi.TYPE_INTEGER, description="Número de intentos realizados"),
+                        'fechaPrueba': openapi.Schema(type=openapi.TYPE_STRING, format="date", description="Fecha de la prueba")
+                    }
+                )
+            ),
+            400: openapi.Response(description="Error en la solicitud."),
+            404: openapi.Response(description="Registro no encontrado.")
+        }
+    )
     def put(self, request):
         estudiante_id = request.data.get('estudiante_id')
         prueba_id = request.data.get('prueba_id')
@@ -1077,9 +1109,13 @@ class ActualizarEstudiantePruebaAPIView(APIView):
         # Obtener el registro
         estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
 
-        # Serializar y validar los datos
+        # Incrementar intento y actualizar fechaPrueba
+        estudiante_prueba.intento += 1
+        estudiante_prueba.fechaPrueba = date.today()
+
+        # Serializar y validar los datos restantes
         serializer = EstudiantePruebaSerializer(estudiante_prueba, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()  # Actualizar el registro
+            serializer.save()  # Actualizar el registro con los nuevos datos
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

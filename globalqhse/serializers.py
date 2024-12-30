@@ -250,4 +250,4 @@ class ProgresoSerializer(serializers.ModelSerializer):
 class EstudiantePruebaSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstudiantePrueba
-        fields = ['estaAprobado', 'calificacion', 'intento', 'fechaPrueba']
+        fields = ['estaAprobado', 'calificacion']
