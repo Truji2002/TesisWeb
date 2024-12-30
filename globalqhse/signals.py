@@ -9,7 +9,7 @@ def actualizar_cantidad_modulos_y_progreso(sender, instance, created, **kwargs):
     if created:
         subcurso.cantidad_modulos += 1
         subcurso.save()
-    subcurso.actualizar_progreso()
+    
 
 
 @receiver(post_delete, sender=Modulo)
@@ -19,7 +19,7 @@ def disminuir_cantidad_modulos(sender, instance, **kwargs):
         if subcurso.cantidad_modulos > 0:
             subcurso.cantidad_modulos -= 1
             subcurso.save()
-        subcurso.actualizar_progreso()
+        
     except Subcurso.DoesNotExist:
         pass
 
