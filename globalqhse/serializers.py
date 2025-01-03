@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso,EstudiantePrueba
+from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso
+from .models import EstudianteSubcurso, EstudianteModulo,EstudiantePrueba
 from .utils.email import EmailService
 import random
 import string
@@ -226,6 +227,15 @@ class ModuloSerializer(serializers.ModelSerializer):
         if obj.archivo and hasattr(obj.archivo, 'url'):
             return request.build_absolute_uri(obj.archivo.url)
         return None
+    
+    def update(self, instance, validated_data):
+        archivo = validated_data.get('archivo', None)
+        if archivo is not None:
+            instance.archivo = archivo  # Actualizar si se envía
+        instance.nombre = validated_data.get('nombre', instance.nombre)
+        instance.enlace = validated_data.get('enlace', instance.enlace)
+        instance.save()
+        return instance
 
 
 class InstructorCursoSerializer(serializers.ModelSerializer):
@@ -251,3 +261,13 @@ class EstudiantePruebaSerializer(serializers.ModelSerializer):
     class Meta:
         model = EstudiantePrueba
         fields = ['estaAprobado', 'calificacion']
+
+class EstudianteSubcursoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EstudianteSubcurso
+        fields = '__all__'
+
+class EstudianteModuloSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EstudianteModulo
+        fields = '__all__'

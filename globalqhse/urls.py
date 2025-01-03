@@ -12,9 +12,9 @@ from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
 from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
-
-from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView
-
+from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView,EstudianteModuloViewSet,EstudianteSubcursoViewSet
+from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView,SimulacionesCompletadasAPIView
+from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
 router.register(r'administradores', AdministradorViewSet)
@@ -27,6 +27,8 @@ router.register(r'subcursos',SubcursoViewSet)
 router.register(r'modulos',ModuloViewSet)
 router.register(r'progreso',ProgresoViewSet)
 router.register(r'estudiantePrueba',EstudiantePruebaViewSet)
+router.register(r'estudianteSubcurso',EstudianteSubcursoViewSet)
+router.register(r'estudianteModulo',EstudianteModuloViewSet)
 
 schema_view = get_schema_view(
    openapi.Info(
@@ -63,6 +65,16 @@ urlpatterns = [
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
     path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
     path('actualizar-prueba/', ActualizarEstudiantePruebaAPIView.as_view(), name='actualizar_prueba'),
+    path('empresas-total/', EmpresasTotalesAPIView.as_view(), name='empresas_total'),
+    path('usuarios-total/', UsuariosTotalesAPIView.as_view(), name='usuarios_total'),
+    path('cursos-total/', CursosTotalesAPIView.as_view(), name='cursos_total'),
+    path('progreso-promedio/', ProgresoPromedioAPIView.as_view(), name='progreso_promedio'),
+    path('simulaciones-completadas/', SimulacionesCompletadasAPIView.as_view(), name='simulaciones_completadas'),
+    path('tasa-certificacion/', TasaCertificacionAPIView.as_view(), name='tasa_certificacion'),
+    path('tasa-aprobacion/', TasaAprobacionPruebasAPIView.as_view(), name='tasa_aprobacion'),
+    path('estudiante-empresa/', EstudiantesPorEmpresaAPIView.as_view(), name='estudiante_empresa'),
+    path('instructor-empresa/', InstructoresPorEmpresaAPIView.as_view(), name='instructor_empresa'),
+    path('cursos-finalizacion/', CursosTasaFinalizacionAPIView.as_view(), name='cursos_finalizacion'),
 
    
    

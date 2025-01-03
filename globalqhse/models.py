@@ -269,35 +269,71 @@ class Progreso(models.Model):
     
     def calcular_porcentaje_completado(self):
         """
-        Calcula el porcentaje completado del curso basado en las condiciones definidas.
+        Calcula el porcentaje completado del curso basado en el progreso de subcursos, módulos, simulaciones y pruebas.
         """
-        
-        # Obtener datos necesarios
+        # 1. Obtener todos los subcursos asociados al curso
+        subcursos = Subcurso.objects.filter(curso=self.curso)
+        total_subcursos = subcursos.count() or 1  # Evitar división por cero
+
+        # Calcular avance en subcursos (contenido completado)
+        avance_total_subcursos = 0
+        for subcurso in subcursos:
+            estudiante_subcurso = EstudianteSubcurso.objects.filter(
+                estudiante=self.estudiante, subcurso=subcurso
+            ).first()
+            if estudiante_subcurso:
+                avance_total_subcursos += estudiante_subcurso.porcentajeCompletado
+
+        # Promedio de avance en subcursos
+        porcentaje_contenido = avance_total_subcursos / total_subcursos
+
+        # 2. Obtener el estado de la simulación y la prueba
+        simulacion_completada = self.simulacionCompletada or False
         prueba = EstudiantePrueba.objects.filter(estudiante=self.estudiante, prueba__curso=self.curso).first()
         esta_aprobado = prueba.estaAprobado if prueba else False
 
+        # 3. Determinar la regla de cálculo según si el curso tiene simulación
         if self.curso.simulacion:
-            # Regla de 3: simulación, contenido, prueba
-            completado_total = sum([
-                self.simulacionCompletada,
-                self.contenidoCompletado,
-                esta_aprobado
-            ])
-            self.porcentajeCompletado = (completado_total / 3) * 100
-        else:
-            # Regla de 2: contenido, prueba
-            completado_total = sum([
-                self.contenidoCompletado,
-                esta_aprobado
-            ])
-            self.porcentajeCompletado = (completado_total / 2) * 100
+            # Peso: 50% contenido, 30% simulación, 20% prueba
+            peso_contenido = 0.5
+            peso_simulacion = 0.3
+            peso_prueba = 0.2
 
-        # Actualizar campo `completado`
+            porcentaje_simulacion = 100 if simulacion_completada else 0
+            porcentaje_prueba = 100 if esta_aprobado else 0
+
+            self.porcentajeCompletado = (
+                (porcentaje_contenido * peso_contenido) +
+                (porcentaje_simulacion * peso_simulacion) +
+                (porcentaje_prueba * peso_prueba)
+            )
+        else:
+            # Peso: 80% contenido, 20% prueba
+            peso_contenido = 0.8
+            peso_prueba = 0.2
+
+            porcentaje_prueba = 100 if esta_aprobado else 0
+
+            self.porcentajeCompletado = (
+                (porcentaje_contenido * peso_contenido) +
+                (porcentaje_prueba * peso_prueba)
+            )
+
+        # 4. Redondear a 2 decimales y manejar caso de 100%
+        self.porcentajeCompletado = round(self.porcentajeCompletado, 2)
+        if self.porcentajeCompletado >= 99:
+            self.porcentajeCompletado = 100
+
+        # 5. Actualizar estado `completado` del curso
+        self.contenidoCompletado = porcentaje_contenido == 100
         self.completado = self.porcentajeCompletado == 100
 
-        self._skip_post_save = True  # Evita disparar la señal
+        # 6. Guardar cambios sin disparar señales
+        self._skip_post_save = True
         self.save()
         self._skip_post_save = False
+
+
 
 
 
@@ -325,6 +361,7 @@ class Estudiante(Usuario):
         """
         Crea un estudiante, lo inscribe automáticamente en los cursos de su instructor,
         y registra las pruebas asociadas en la tabla EstudiantePrueba.
+        También crea registros en las tablas EstudianteSubcurso y EstudianteModulo.
         """
         try:
             # Verificar que el código de organización es válido
@@ -346,6 +383,8 @@ class Estudiante(Usuario):
                 )
                 progreso_records = []
                 estudiante_prueba_records = []
+                estudiante_subcurso_records = []
+                estudiante_modulo_records = []
 
                 for curso in cursos:
                     # Crear registros de progreso
@@ -366,9 +405,25 @@ class Estudiante(Usuario):
                             EstudiantePrueba(estudiante=estudiante, prueba=prueba)
                         )
 
+                    # Crear registros en EstudianteSubcurso para los subcursos del curso
+                    subcursos = Subcurso.objects.filter(curso=curso)
+                    for subcurso in subcursos:
+                        estudiante_subcurso_records.append(
+                            EstudianteSubcurso(estudiante=estudiante, subcurso=subcurso, completado=False, porcentajeCompletado=0.0)
+                        )
+
+                        # Crear registros en EstudianteModulo para los módulos del subcurso
+                        modulos = Modulo.objects.filter(subcurso=subcurso)
+                        for modulo in modulos:
+                            estudiante_modulo_records.append(
+                                EstudianteModulo(estudiante=estudiante, modulo=modulo, completado=False)
+                            )
+
                 # Guardar registros en la base de datos
                 Progreso.objects.bulk_create(progreso_records)
                 EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
+                EstudianteSubcurso.objects.bulk_create(estudiante_subcurso_records)
+                EstudianteModulo.objects.bulk_create(estudiante_modulo_records)
 
             return estudiante
 
@@ -456,3 +511,29 @@ class Pregunta(models.Model):
         return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres
 
 
+class EstudianteSubcurso(models.Model):
+    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="subcursos")
+    subcurso = models.ForeignKey(Subcurso, on_delete=models.CASCADE, related_name="estudiantes")
+    completado = models.BooleanField(default=False)
+    porcentajeCompletado = models.FloatField(default=0.0)
+
+    class Meta:
+        unique_together = ('estudiante', 'subcurso')
+        verbose_name = "Estudiante-Subcurso"
+        verbose_name_plural = "Estudiantes-Subcursos"
+
+    def __str__(self):
+        return f"{self.estudiante.email} - {self.subcurso.nombre}"
+    
+class EstudianteModulo(models.Model):
+    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="modulos")
+    modulo = models.ForeignKey(Modulo, on_delete=models.CASCADE, related_name="estudiantes")
+    completado = models.BooleanField(default=False)
+
+    class Meta:
+        unique_together = ('estudiante', 'modulo')
+        verbose_name = "Estudiante-Modulo"
+        verbose_name_plural = "Estudiantes-Modulos"
+
+    def __str__(self):
+        return f"{self.estudiante.email} - {self.modulo.nombre}"
