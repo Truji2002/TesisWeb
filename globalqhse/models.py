@@ -1,3 +1,4 @@
+from datetime import datetime
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
@@ -10,6 +11,7 @@ from django.db import transaction
 from django.core.files.base import File
 from reportlab.pdfgen import canvas
 import io
+
 
 
 class Empresa(models.Model):
@@ -88,56 +90,12 @@ class Administrador(Usuario):
         self.rol = 'admin'
         super().save(*args, **kwargs)
 
-    def asignar_cursos_a_instructor(self, instructor_id, cursos_ids):
-        """
-        Método para que el administrador asigne cursos a un instructor.
-        
-        Parámetros:
-        - instructor_id: ID del instructor al que se asignarán los cursos.
-        - cursos_ids: Lista de IDs de los cursos que se asignarán.
-        
-        Excepciones:
-        - ValidationError si el instructor no existe o si alguno de los cursos no existe.
-        """
-        from django.db import transaction
-        from django.core.exceptions import ValidationError
-        from .models import Instructor, Curso, InstructorCurso
-
-        try:
-            # Obtener el instructor
-            instructor = Instructor.objects.get(id=instructor_id)
-
-            # Validar que los cursos existen
-            cursos = Curso.objects.filter(id__in=cursos_ids)
-            if len(cursos) != len(cursos_ids):
-                raise ValidationError("Uno o más cursos no existen.")
-
-            # Crear las asignaciones
-            with transaction.atomic():
-                for curso in cursos:
-                    # Verificar si ya está asignado
-                    if InstructorCurso.objects.filter(instructor=instructor, curso=curso).exists():
-                        continue  # Saltar si ya está asignado
-
-                    # Crear la relación
-                    InstructorCurso.objects.create(
-                        instructor=instructor,
-                        curso=curso
-                    )
-
-            return f"Se asignaron {len(cursos)} cursos al instructor {instructor.email}."
-
-        except Instructor.DoesNotExist:
-            raise ValidationError("El instructor no existe.")
-        except Exception as e:
-            raise ValidationError(f"Ocurrió un error durante la asignación: {str(e)}")
+    
 
 
 class Instructor(Usuario):
-    area = models.CharField(max_length=100)
-    codigoOrganizacion = models.CharField(max_length=100, blank=False)
-    fechaInicioCapacitacion = models.DateField()
-    fechaFinCapacitacion = models.DateField()
+    
+    
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='instructores')
     debeCambiarContraseña = models.BooleanField(default=True)  
 
@@ -146,22 +104,13 @@ class Instructor(Usuario):
         verbose_name_plural = "Instructores"
 
     def __str__(self):
-        return f"Instructor: {self.email} - Área: {self.area} - Empresa: {self.empresa.nombre}"
+        return f"Instructor: {self.email} - Empresa: {self.empresa.nombre}"
 
     def save(self, *args, **kwargs):
+
         self.rol = 'instructor'
-        if not self.codigoOrganizacion:
-            prefix = self.empresa.nombre[:3].upper()
-            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-            self.codigoOrganizacion = f"{prefix}-{suffix}"
-            
         super().save(*args, **kwargs)
-
-    def clean(self):
-        if self.fechaInicioCapacitacion > self.fechaFinCapacitacion:
-            raise ValidationError("La fecha de inicio de la capacitación no puede ser posterior a la fecha de fin.")
-        super().clean()
-
+    
 
 
     def generar_contraseña_temporal(self):
@@ -186,19 +135,51 @@ class Curso(models.Model):
         return self.titulo
 
 
-class InstructorCurso(models.Model):
+class Contrato(models.Model):
     instructor = models.ForeignKey(Instructor, on_delete=models.CASCADE, related_name='cursos_asignados')
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name='instructores_asignados')
-    fecha_asignacion = models.DateField(auto_now_add=True)  # Fecha en la que se asigna el curso
+    codigoOrganizacion = models.CharField(max_length=100, blank=False)
+    fechaInicioCapacitacion = models.DateField()
+    fechaFinCapacitacion = models.DateField()
+    activo = models.BooleanField(default=True)
 
     class Meta:
-        verbose_name = "Instructor-Curso"
-        verbose_name_plural = "Instructor-Cursos"
-        unique_together = ('instructor', 'curso')  # Evita duplicados
+        verbose_name = "Contrato"
+        verbose_name_plural = "Contratos"
 
     def __str__(self):
-        return f"{self.instructor.email} - {self.curso.titulo} (Asignado el {self.fecha_asignacion})"
+        return f"{self.instructor.email} - {self.curso.titulo}"
+    
+    def save(self, *args, **kwargs):
 
+        # Verificar si existe un contrato con las mismas fechas de capacitación
+        contrato_existente = Contrato.objects.filter(
+            fechaInicioCapacitacion=self.fechaInicioCapacitacion,
+            fechaFinCapacitacion=self.fechaFinCapacitacion
+        ).first()
+
+        if contrato_existente:
+            # Reutilizar el `codigoOrganizacion` del contrato existente
+            self.codigoOrganizacion = contrato_existente.codigoOrganizacion
+        else:
+            # Generar un nuevo código si no existe un contrato con las mismas fechas
+            prefix = self.instructor.empresa.nombre[:3].upper()
+            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+            self.codigoOrganizacion = f"{prefix}-{suffix}"
+
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def obtener_contratos_activos(cls):
+        return cls.objects.filter(fechaFinCapacitacion__gte=datetime.date.today())
+        
+  
+    def clean(self):
+        if self.fechaInicioCapacitacion > self.fechaFinCapacitacion:
+            raise ValidationError("La fecha de inicio de la capacitación no puede ser posterior a la fecha de fin.")
+        super().clean()
+
+    
 # Clase Subcurso
 class Subcurso(models.Model):
     curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name='subcursos')
@@ -263,6 +244,9 @@ class Progreso(models.Model):
     class Meta:
         verbose_name = "Progreso"
         verbose_name_plural = "Progresos"
+        unique_together = ('estudiante', 'curso')
+   
+        
 
     def __str__(self):
         return f"{self.estudiante.email} - {self.curso.titulo}: {self.porcentajeCompletado}% completado"
@@ -352,7 +336,7 @@ class Estudiante(Usuario):
     def save(self, *args, **kwargs):
         self.rol = 'estudiante'
         # Validar que el código de organización sea válido
-        if not Instructor.objects.filter(codigoOrganizacion=self.codigoOrganizacion,is_active=True).exists():
+        if not Contrato.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exists():
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         super().save(*args, **kwargs)
 
@@ -365,7 +349,7 @@ class Estudiante(Usuario):
         """
         try:
             # Verificar que el código de organización es válido
-            instructor = Instructor.objects.get(codigoOrganizacion=codigoOrganizacion)
+            contrato = Contrato.objects.get(codigoOrganizacion=codigoOrganizacion)
 
             # Crear el estudiante
             with transaction.atomic():
@@ -379,7 +363,7 @@ class Estudiante(Usuario):
 
                 # Inscribir al estudiante en los cursos del instructor
                 cursos = Curso.objects.filter(
-                    instructores_asignados__instructor__codigoOrganizacion=codigoOrganizacion
+                    contratos__codigoOrganizacion=codigoOrganizacion
                 )
                 progreso_records = []
                 estudiante_prueba_records = []

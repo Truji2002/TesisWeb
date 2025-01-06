@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Usuario, Administrador, Instructor,  Empresa, InstructorCurso,Estudiante
+from .models import Usuario, Administrador, Instructor,  Empresa,Estudiante
 from .models import Curso, Progreso, Certificado, Modulo,Prueba, Pregunta, Subcurso
 
 
@@ -12,7 +12,7 @@ admin.site.register(Instructor)
 admin.site.register(Estudiante)
 admin.site.register(Empresa)
 
-admin.site.register(InstructorCurso)
+
 admin.site.register(Curso)
 admin.site.register(Progreso)
 admin.site.register(Certificado)

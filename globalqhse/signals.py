@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
-
-from .models import Curso, Subcurso, Modulo,Progreso,Certificado,EstudiantePrueba,EstudianteSubcurso,EstudianteModulo
+from .utils.email import EmailService
+from .models import Curso, Subcurso, Modulo,Progreso,Certificado,EstudiantePrueba,EstudianteSubcurso,EstudianteModulo,Contrato
 
 @receiver(post_save, sender=Modulo)
 def actualizar_cantidad_modulos_y_progreso(sender, instance, created, **kwargs):
@@ -144,3 +144,4 @@ def actualizar_progreso_con_subcurso(sender, instance, **kwargs):
 
     # Recalcular el porcentaje general del curso
     progreso.calcular_porcentaje_completado()
+

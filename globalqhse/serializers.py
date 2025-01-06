@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,InstructorCurso,Progreso
+from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,Contrato,Progreso
 from .models import EstudianteSubcurso, EstudianteModulo,EstudiantePrueba
 from .utils.email import EmailService
 import random
@@ -61,9 +61,8 @@ class InstructorSerializer(PasswordValidationMixin, serializers.ModelSerializer)
     empresa_nombre = serializers.SerializerMethodField()
     class Meta:
         model = Instructor
-        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'area', 
-                  'fechaInicioCapacitacion', 'fechaFinCapacitacion', 
-                  'codigoOrganizacion', 'is_active','empresa','empresa_nombre']
+        fields = ['id', 'first_name', 'last_name', 'email', 'password',
+                  'empresa','empresa_nombre']
         extra_kwargs = {
             'password': {'write_only': True},
             'email': {'required': True},
@@ -94,8 +93,8 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Instructor
         fields = [
-            'first_name', 'last_name', 'email', 'area',
-            'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'empresa'
+            'first_name', 'last_name', 'email', 
+            'empresa'
         ]
         extra_kwargs = {
             'email': {'required': True},
@@ -104,15 +103,9 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        self.rol = 'instructor'
         try:
-            # Crear el instructor sin contraseña ni codigoOrganizacion
+            # Crear el instructor sin contraseña
             instructor = Instructor(**validated_data)
-
-            # Generar codigoOrganizacion automáticamente
-            prefix = instructor.empresa.nombre[:3].upper()
-            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-            instructor.codigoOrganizacion = f"{prefix}-{suffix}"
 
             # Generar contraseña temporal
             temp_password = secrets.token_urlsafe(10)
@@ -128,7 +121,7 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
 
                 Su cuenta ha sido creada exitosamente. Aquí están sus credenciales de acceso:
 
-                - Código de organización: {instructor.codigoOrganizacion}
+                - Correo electrónico: {instructor.email}
                 - Contraseña temporal: {temp_password}
 
                 Por favor, cambie su contraseña después de iniciar sesión.
@@ -194,7 +187,7 @@ class AdministradorDetailSerializer(LoginResponseSerializer):
 class InstructorDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
         model = Instructor
-        fields = LoginResponseSerializer.Meta.fields + ['area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'codigoOrganizacion','is_active','debeCambiarContraseña']  
+        fields = LoginResponseSerializer.Meta.fields + ['debeCambiarContraseña','is_active']  
 
 class EstudianteDetailSerializer(LoginResponseSerializer):
     class Meta(LoginResponseSerializer.Meta):
@@ -238,19 +231,54 @@ class ModuloSerializer(serializers.ModelSerializer):
         return instance
 
 
-class InstructorCursoSerializer(serializers.ModelSerializer):
+class ContratoSerializer(serializers.ModelSerializer):
+    # Campos relacionados para mostrar información del instructor y el curso
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
+    instructor_nombre = serializers.CharField(source='instructor.first_name', read_only=True)
     curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
-    curso_id=serializers.IntegerField(source='curso.id', read_only=True)
 
     class Meta:
-        model = InstructorCurso
-        fields = ['id', 'instructor', 'instructor_email','curso_id', 'curso', 'curso_titulo', 'fecha_asignacion']
+        model = Contrato
+        fields = [
+            'id',
+            'instructor',
+            'instructor_email',
+            'instructor_nombre',
+            'curso',
+            'curso_titulo',
+            'codigoOrganizacion',
+            'fechaInicioCapacitacion',
+            'fechaFinCapacitacion',
+            'activo',
+        ]
         extra_kwargs = {
-            'instructor': {'write_only': True},
-            'curso': {'write_only': True},
+            'codigoOrganizacion': {'read_only': True},  # No permitir la escritura de este campo
+            'instructor': {'write_only': True},  # Permitir solo el ID para escritura
+            'curso': {'write_only': True},  # Permitir solo el ID para escritura
+            'activo': {'default': True},
         }
 
+    def validate(self, data):
+        """
+        Validar que las fechas sean coherentes y no se solapen.
+        """
+        fecha_inicio = data.get('fechaInicioCapacitacion')
+        fecha_fin = data.get('fechaFinCapacitacion')
+
+        if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+            raise serializers.ValidationError(
+                {"fechaInicioCapacitacion": "La fecha de inicio no puede ser posterior a la fecha de fin."}
+            )
+        return data
+
+    def create(self, validated_data):
+        """
+        Crear una nueva instancia del modelo Contrato, gestionando el código de organización.
+        """
+        # Reutiliza el método `save` definido en el modelo
+        contrato = Contrato.objects.create(**validated_data)
+        return contrato
+    
 class ProgresoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Progreso

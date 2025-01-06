@@ -9,11 +9,12 @@ from .views import CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,M
 from . import views
 from rest_framework_simplejwt.views import TokenRefreshView, TokenVerifyView
 from rest_framework import permissions
-from .views import CambiarContraseñaAPIView
-from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView
-from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
+from .views import CambiarContraseñaAPIView,CrearContratosAPIView,ObtenerContratosAPIView,EliminarContratosAPIView,ActualizarContratosAPIView
+from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoAPIView,ContratosPorInstructorAPIView
+from .views import ModulosPorSubcursoAPIView,ContratoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView,EstudianteModuloViewSet,EstudianteSubcursoViewSet
 from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView,SimulacionesCompletadasAPIView
+from .views import FilteredMetricsAPIView,GeneralMetricsAPIView
 from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
@@ -29,6 +30,7 @@ router.register(r'progreso',ProgresoViewSet)
 router.register(r'estudiantePrueba',EstudiantePruebaViewSet)
 router.register(r'estudianteSubcurso',EstudianteSubcursoViewSet)
 router.register(r'estudianteModulo',EstudianteModuloViewSet)
+
 
 schema_view = get_schema_view(
    openapi.Info(
@@ -60,7 +62,7 @@ urlpatterns = [
     path('subcursos/curso/<int:curso_id>/', SubcursosPorCursoAPIView.as_view(), name='subcursos_por_curso'),
     path('modulos/subcurso/<int:subcurso_id>/', ModulosPorSubcursoAPIView.as_view(), name='modulos_por_subcurso'),
     path('modulos/<int:pk>/descargar/', DescargarArchivoModuloAPIView.as_view(), name='descargar_archivo_modulo'),
-    path('instructor-curso/', InstructorCursoAPIView.as_view(), name='instructor_curso'),
+    path('contrato/', ContratoAPIView.as_view(), name='contrato'),
     path('estudiante-codigoOrganizacion/', EstudiantesPorCodigoOrganizacionAPIView.as_view(), name='estudiante_codigoOrganizacion'),
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
     path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
@@ -75,7 +77,13 @@ urlpatterns = [
     path('estudiante-empresa/', EstudiantesPorEmpresaAPIView.as_view(), name='estudiante_empresa'),
     path('instructor-empresa/', InstructoresPorEmpresaAPIView.as_view(), name='instructor_empresa'),
     path('cursos-finalizacion/', CursosTasaFinalizacionAPIView.as_view(), name='cursos_finalizacion'),
-
+    path('crear-contrato/', CrearContratosAPIView.as_view(), name='crear_contrato'),
+    path('actualizar-contrato/', ActualizarContratosAPIView.as_view(), name='actualizar_contrato'),
+    path('obtener-contrato/', ObtenerContratosAPIView.as_view(), name='obtener_contrato'),
+    path('eliminar-contrato/', EliminarContratosAPIView.as_view(), name='eliminar_contrato'),
+    path('obtener-contrato-por-instructor/', ContratosPorInstructorAPIView.as_view(), name='obtener_contrato_por_instructor'),
+    path('metricas-general/', GeneralMetricsAPIView.as_view(), name='metricas_general'),
+    path('metricas-filtro/', FilteredMetricsAPIView.as_view(), name='metricas_filtro'),
    
    
 ]
