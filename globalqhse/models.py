@@ -10,6 +10,8 @@ from django.db import transaction
 from django.core.files.base import File
 from reportlab.pdfgen import canvas
 import io
+import logging
+logger = logging.getLogger(__name__)
 
 
 class Empresa(models.Model):
@@ -235,13 +237,16 @@ class Modulo(models.Model):
 
 # Clase Prueba
 class Prueba(models.Model):
-    curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='prueba', null=True)
+    curso = models.OneToOneField(Curso, on_delete=models.CASCADE, related_name='prueba')
     duracion = models.IntegerField()
-    fechaCreacion = models.DateField()
+    fechaCreacion = models.DateField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Prueba"
         verbose_name_plural = "Pruebas"
+
+    def __str__(self):
+        return f"Prueba para el Curso: {self.curso.nombre}"
 
 # Clase Progreso (tabla intermedia entre Curso y Estudiante)
 class Progreso(models.Model):
@@ -282,7 +287,7 @@ class Progreso(models.Model):
                 esta_aprobado
             ])
             self.porcentajeCompletado = (completado_total / 2) * 100
-
+        
         self.completado = self.porcentajeCompletado == 100
         self.save()
 
@@ -377,20 +382,31 @@ class EstudiantePrueba(models.Model):
         unique_together = ('estudiante', 'prueba')
 
     def calificar(self, respuestas_estudiante):
-        """
-        Califica la prueba basándose en las respuestas correctas.
-        """
-        preguntas = self.prueba.preguntas.all()
-        respuestas_correctas = 0
-        for pregunta in preguntas:
-            if pregunta.respuestaCorrecta == respuestas_estudiante.get(str(pregunta.id)):
-                respuestas_correctas += 1
+        logger.info(f"Calificando prueba {self.prueba.id} para estudiante {self.estudiante.id}")
+        try:
+            preguntas = self.prueba.preguntas.all()
+            if not preguntas.exists():
+                raise ValueError("No hay preguntas asociadas a la prueba.")
 
-        self.calificacion = (respuestas_correctas / preguntas.count()) * 100
-        self.estaAprobado = self.calificacion >= 60  # Ejemplo: 60% es el mínimo para aprobar
-        self.intento += 1
-        self.save()
+            respuestas_correctas = 0
+            for pregunta in preguntas:
+                if pregunta.respuestaCorrecta.lower() == respuestas_estudiante.get(str(pregunta.id), "").lower():
+                    respuestas_correctas += 1
 
+            self.calificacion = (respuestas_correctas / preguntas.count()) * 100
+            self.estaAprobado = self.calificacion >= 60
+            self.intento += 1
+
+            # Evitar recursión
+            self._skip_post_save = True
+            self.save()
+            self._skip_post_save = False
+        except Exception as e:
+            logger.error(f"Error al calificar: {e}")
+            raise
+
+
+    
 
 class Certificado(models.Model):
     estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="certificados",null=True)
@@ -449,7 +465,7 @@ class Certificado(models.Model):
 class Pregunta(models.Model):
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
     pregunta = models.TextField()
-    opcionesRespuestas = models.TextField()  # Considerar usar un campo JSON si necesitas más estructura
+    opcionesRespuestas = models.JSONField()  # Requiere Django 3.1+
     respuestaCorrecta = models.CharField(max_length=255)
     puntajePregunta = models.IntegerField()
 
@@ -458,4 +474,4 @@ class Pregunta(models.Model):
         verbose_name_plural = "Preguntas"
 
     def __str__(self):
-        return f"Pregunta: {self.pregunta[:50]}..."  # Mostrar solo los primeros 50 caracteres
+        return f"Pregunta: {self.pregunta[:50]}..."

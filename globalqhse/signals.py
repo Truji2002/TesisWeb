@@ -54,11 +54,15 @@ def actualizar_progreso_curso(sender, instance, **kwargs):
     """
     Actualiza el porcentaje completado del curso cada vez que se guarda un progreso.
     """
-    if instance._skip_post_save:
+    if hasattr(instance, '_skip_post_save') and instance._skip_post_save:
         return
-    
+   
+    # Actualizar el progreso
+    instance._skip_post_save = True
     instance.calcular_porcentaje_completado()
-
+    instance._skip_post_save = False
+ 
+ 
 @receiver(post_save, sender=EstudiantePrueba)
 def actualizar_progreso_con_prueba(sender, instance, **kwargs):
     """
@@ -66,4 +70,11 @@ def actualizar_progreso_con_prueba(sender, instance, **kwargs):
     """
     progreso = Progreso.objects.filter(estudiante=instance.estudiante, curso=instance.prueba.curso).first()
     if progreso:
+        # Evitar el ciclo infinito
+        if hasattr(progreso, '_skip_post_save') and progreso._skip_post_save:
+            return
+ 
+        progreso._skip_post_save = True
         progreso.calcular_porcentaje_completado()
+        progreso._skip_post_save = False
+ 

@@ -16,6 +16,8 @@ from drf_yasg import openapi
 from rest_framework import generics
 from django.db import transaction
 from django.db import models
+from django_filters.rest_framework import DjangoFilterBackend
+
 from datetime import date
 
 import logging
@@ -966,27 +968,58 @@ class PruebaViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = PruebaSerializer
 
-    @action(detail=False, methods=['get'], url_path='por-estudiante')
-    def pruebas_por_estudiante(self, request):
-        """
-        Retorna las pruebas asociadas a los cursos de un estudiante.
-        """
-        estudiante_id = request.query_params.get('estudiante_id')
-        if not estudiante_id:
+    def create(self, request, *args, **kwargs):
+        curso_id = request.data.get('curso')
+        if Prueba.objects.filter(curso_id=curso_id).exists():
             return Response(
-                {"error": "El parámetro 'estudiante_id' es requerido."},
+                {"error": "Ya existe una prueba asociada a este curso."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        estudiante = Estudiante.objects.get(id=estudiante_id)
-        progreso = Progreso.objects.filter(estudiante=estudiante).values_list('curso', flat=True)
-        pruebas = Prueba.objects.filter(curso__in=progreso)
-        serializer = PruebaSerializer(pruebas, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
+    @action(detail=False, methods=['get'], url_path='by_curso/(?P<curso_id>[^/.]+)')
+    def get_prueba_by_curso(self, request, curso_id=None):
+        try:
+            prueba = Prueba.objects.get(curso__id=curso_id)
+            serializer = self.get_serializer(prueba)
+            return Response(serializer.data)
+        except Prueba.DoesNotExist:
+            return Response({"detail": "Prueba no encontrada para el curso especificado."}, status=status.HTTP_404_NOT_FOUND)
+    @action(detail=True, methods=['post'], url_path='add_preguntas')
+    def add_preguntas(self, request, pk=None):
+        """
+        Agregar preguntas a una prueba específica.
+        """
+        try:
+            prueba = self.get_object()  # Obtener la prueba por su ID
+            preguntas_data = request.data  # Datos enviados en la solicitud
 
+            # Verificar si los datos son una lista
+            if not isinstance(preguntas_data, list):
+                return Response(
+                    {"error": "El cuerpo de la solicitud debe ser una lista de preguntas."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
+            # Crear preguntas asociadas a la prueba
+            for pregunta_data in preguntas_data:
+                pregunta_data['prueba'] = prueba.id  # Asignar la prueba a la pregunta
+                serializer = PreguntaSerializer(data=pregunta_data)
+                serializer.is_valid(raise_exception=True)
+                serializer.save()
+
+            return Response({"message": "Preguntas agregadas con éxito."}, status=status.HTTP_201_CREATED)
+
+        except Prueba.DoesNotExist:
+            return Response({"error": "Prueba no encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 class PreguntaViewSet(viewsets.ModelViewSet):
     queryset = Pregunta.objects.all()
     serializer_class = PreguntaSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['prueba']  #
 
     def create(self, request, *args, **kwargs):
         if isinstance(request.data, list):  # Verificar si el cuerpo es una lista
@@ -1142,3 +1175,180 @@ class ActualizarEstudiantePruebaAPIView(APIView):
             "calificacion": estudiante_prueba.calificacion,
             "estaAprobado": estudiante_prueba.estaAprobado
         }, status=status.HTTP_200_OK)
+
+
+
+
+class PruebasEstudianteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        estudiante_id = request.user.id  # Asume que el usuario autenticado es un estudiante
+        pruebas = EstudiantePrueba.objects.filter(estudiante_id=estudiante_id).select_related('prueba')
+
+        data = [
+            {
+                "id": prueba.prueba.id,
+                "curso": prueba.prueba.curso.titulo,
+                "duracion": prueba.prueba.duracion,
+                "estaAprobado": prueba.estaAprobado,
+                "calificacion": prueba.calificacion,
+                "fechaPrueba": prueba.fechaPrueba
+            }
+            for prueba in pruebas
+        ]
+        return Response(data)
+
+
+class ResponderPruebaAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="API para que un estudiante responda una prueba.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'prueba_id': openapi.Schema(
+                    type=openapi.TYPE_INTEGER, 
+                    description="ID de la prueba que se va a responder."
+                ),
+                'respuestas': openapi.Schema(
+                    type=openapi.TYPE_OBJECT, 
+                    description="Diccionario con las respuestas del estudiante. Las claves son los IDs de las preguntas y los valores son las respuestas seleccionadas.",
+                    additional_properties=openapi.Schema(type=openapi.TYPE_STRING)
+                ),
+            },
+            required=['prueba_id', 'respuestas'],
+        ),
+        responses={
+            200: openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'calificacion': openapi.Schema(
+                        type=openapi.TYPE_NUMBER, 
+                        description="Calificación obtenida en la prueba."
+                    ),
+                    'estaAprobado': openapi.Schema(
+                        type=openapi.TYPE_BOOLEAN, 
+                        description="Indica si el estudiante aprobó la prueba."
+                    ),
+                    'mensaje': openapi.Schema(
+                        type=openapi.TYPE_STRING, 
+                        description="Mensaje indicando el resultado de la operación."
+                    ),
+                },
+            ),
+            400: "Error en los datos enviados.",
+            401: "No autenticado.",
+            404: "Prueba no encontrada.",
+        }
+    )
+    def post(self, request):
+        prueba_id = request.data.get('prueba_id')
+        respuestas = request.data.get('respuestas')
+
+        if not prueba_id or not respuestas:
+            return Response(
+                {"error": "prueba_id y respuestas son obligatorios."},
+                status=400
+            )
+
+        estudiante_id = request.user.id
+        estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
+
+        # Validar respuestas
+        preguntas = Pregunta.objects.filter(prueba_id=prueba_id)
+        calificacion_total = 0
+        puntos_por_pregunta = preguntas.first().puntajePregunta  # Supone que todas las preguntas tienen el mismo puntaje
+
+        for pregunta in preguntas:
+            respuesta_correcta = pregunta.respuestaCorrecta
+            respuesta_del_estudiante = respuestas.get(str(pregunta.id))  # Clave debe ser un string
+
+            if respuesta_del_estudiante and respuesta_del_estudiante.lower() == respuesta_correcta.lower():
+                calificacion_total += puntos_por_pregunta
+
+        # Guardar calificación
+        estudiante_prueba.calificacion = calificacion_total
+        estudiante_prueba.estaAprobado = calificacion_total >= 60  # Nota mínima para aprobar
+        estudiante_prueba.save()
+
+        return Response({
+            "calificacion": estudiante_prueba.calificacion,
+            "estaAprobado": estudiante_prueba.estaAprobado,
+            "mensaje": "Prueba calificada exitosamente."
+        }, status=200)
+
+class PreguntasPorPruebaEstudianteAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Obtiene las preguntas de una prueba asignada a un estudiante.",
+        manual_parameters=[
+            openapi.Parameter(
+                'prueba_id',
+                openapi.IN_QUERY,
+                description="ID de la prueba.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                "Preguntas de la prueba.",
+                PreguntaSerializer(many=True)
+            ),
+            404: "Prueba no encontrada o no asignada al estudiante."
+        }
+    )
+    def get(self, request):
+        prueba_id = request.query_params.get('prueba_id')
+        estudiante_id = request.user.id
+
+        if not prueba_id:
+            return Response({"error": "El parámetro 'prueba_id' es obligatorio."}, status=400)
+
+        # Verificar si la prueba está asignada al estudiante
+        estudiante_prueba = EstudiantePrueba.objects.filter(
+            prueba_id=prueba_id, estudiante_id=estudiante_id
+        ).first()
+
+        if not estudiante_prueba:
+            return Response(
+                {"error": "La prueba no está asignada a este estudiante o no existe."},
+                status=404
+            )
+
+        # Obtener las preguntas asociadas a la prueba
+        preguntas = Pregunta.objects.filter(prueba_id=prueba_id)
+        serializer = PreguntaSerializer(preguntas, many=True)
+
+        return Response(serializer.data, status=200)
+
+class PreguntasPorPruebaAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        operation_description="Obtiene las preguntas asociadas a una prueba específica.",
+        manual_parameters=[
+            openapi.Parameter(
+                "prueba_id", openapi.IN_QUERY, description="ID de la prueba", type=openapi.TYPE_INTEGER
+            )
+        ],
+        responses={
+            200: PreguntaSerializer(many=True),
+            404: "Prueba no encontrada.",
+        },
+    )
+    def get(self, request):
+        prueba_id = request.query_params.get("prueba_id")
+        if not prueba_id:
+            return Response({"error": "El parámetro 'prueba_id' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        preguntas = Pregunta.objects.filter(prueba_id=prueba_id)
+        if not preguntas.exists():
+            return Response({"error": "No se encontraron preguntas para esta prueba."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PreguntaSerializer(preguntas, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

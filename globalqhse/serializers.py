@@ -3,6 +3,10 @@ from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcu
 from .utils.email import EmailService
 import random
 import string
+import json
+
+from rest_framework.response import Response
+
 import secrets
 from rest_framework.exceptions import ValidationError
 
@@ -206,9 +210,18 @@ class EstudianteDetailSerializer(LoginResponseSerializer):
 
 
 class CursoSerializer(serializers.ModelSerializer):
+    has_prueba = serializers.SerializerMethodField()
+    prueba_id = serializers.SerializerMethodField()
+
     class Meta:
         model = Curso
-        fields = '__all__'
+        fields = '__all__'  # Incluye todos los campos del modelo más los campos adicionales
+
+    def get_has_prueba(self, obj):
+        return hasattr(obj, 'prueba')
+
+    def get_prueba_id(self, obj):
+        return obj.prueba.id if hasattr(obj, 'prueba') else None
 
 class SubcursoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -227,7 +240,14 @@ class ModuloSerializer(serializers.ModelSerializer):
         if obj.archivo and hasattr(obj.archivo, 'url'):
             return request.build_absolute_uri(obj.archivo.url)
         return None
-
+    def update(self, instance, validated_data):
+        archivo = validated_data.get('archivo', None)
+        if archivo is not None:
+            instance.archivo = archivo  # Actualizar si se envía
+        instance.nombre = validated_data.get('nombre', instance.nombre)
+        instance.enlace = validated_data.get('enlace', instance.enlace)
+        instance.save()
+        return instance
 
 class InstructorCursoSerializer(serializers.ModelSerializer):
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
@@ -257,27 +277,49 @@ class EstudiantePruebaSerializer(serializers.ModelSerializer):
 class PreguntaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pregunta
-        fields = ['pregunta', 'opcionesRespuestas', 'respuestaCorrecta', 'puntajePregunta', 'prueba']
-        extra_kwargs = {'prueba': {'write_only': True}}
-    def create(self, validated_data):
-        return Pregunta.objects.create(**validated_data)
+        fields = ['id', 'prueba', 'pregunta', 'opcionesRespuestas', 'respuestaCorrecta', 'puntajePregunta']
+        read_only_fields = ['id']  # Removed 'prueba'
+
+    def validate(self, attrs):
+        opciones = attrs.get('opcionesRespuestas')
+        respuesta_correcta = attrs.get('respuestaCorrecta')
+
+        if not isinstance(opciones, dict):
+            raise serializers.ValidationError({"opcionesRespuestas": "Debe ser un objeto JSON válido."})
+
+        if respuesta_correcta not in opciones.values():
+            raise serializers.ValidationError({"respuestaCorrecta": "La respuesta correcta debe estar entre las opciones de respuesta."})
+
+        return attrs
+
 
 class PruebaSerializer(serializers.ModelSerializer):
-    curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)  # Incluye el título del curso
+    preguntas = PreguntaSerializer(many=True, required=False)
 
     class Meta:
         model = Prueba
-        fields = ['id', 'curso', 'curso_titulo', 'duracion', 'fechaCreacion']  # Agrega curso_titulo a los campos
+        fields = ['id', 'curso', 'duracion', 'fechaCreacion', 'preguntas']
+        read_only_fields = ['id', 'fechaCreacion']
+
+    def validate_curso(self, value):
+        if Prueba.objects.filter(curso=value).exists():
+            raise serializers.ValidationError("Este curso ya tiene una prueba asociada.")
+        return value
 
     def create(self, validated_data):
-        preguntas_data = validated_data.pop('preguntas')
+        preguntas_data = validated_data.pop('preguntas', [])
         prueba = Prueba.objects.create(**validated_data)
         for pregunta_data in preguntas_data:
             Pregunta.objects.create(prueba=prueba, **pregunta_data)
         return prueba
 
-
-
+    def update(self, instance, validated_data):
+        preguntas_data = validated_data.pop('preguntas', [])
+        instance.duracion = validated_data.get('duracion', instance.duracion)
+        instance.save()
+        # La gestión de Preguntas se maneja por separado
+        return instance
+ 
 class PreguntaParaPruebaExistenteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pregunta
@@ -309,3 +351,7 @@ class PruebaConPreguntasSerializer(serializers.ModelSerializer):
         for p_data in preguntas_data:
             Pregunta.objects.create(prueba=prueba, **p_data)
         return prueba
+
+
+
+   

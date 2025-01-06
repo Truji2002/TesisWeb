@@ -3,6 +3,11 @@ from rest_framework.routers import DefaultRouter
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
+from .views import PreguntasPorPruebaAPIView
+
+
+
+from .views import ResponderPruebaAPIView
 
 from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView,  RegistroEstudianteAPIView
 from .views import CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,ModificarInstructorAPIView,RegisterInstructorAPIView
@@ -12,6 +17,9 @@ from rest_framework import permissions
 from .views import CambiarContraseñaAPIView
 from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet, PreguntaViewSet, PruebaViewSet, ActualizarEstudiantePruebaAPIView
 from .views import ModulosPorSubcursoAPIView,InstructorCursoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView, CertificadoAPIView
+from .views import PruebasEstudianteAPIView
+
+
 
 from .views import DescargarArchivoModuloAPIView
 
@@ -64,6 +72,13 @@ urlpatterns = [
     path('emitir-certificado/', EmitirCertificadoAPIView.as_view(), name='emitir_certificado'),
     path('certificado/', CertificadoAPIView.as_view(), name='certificado'),
     path('actualizar-prueba/', ActualizarEstudiantePruebaAPIView.as_view(), name='actualizar_prueba'),
+    path('pruebas-estudiante/', PruebasEstudianteAPIView.as_view(), name='pruebas-estudiante'),
+    path('responder-prueba/', ResponderPruebaAPIView.as_view(), name='responder-prueba'),
+    path("api/preguntas/por-prueba/", PreguntasPorPruebaAPIView.as_view(), name="preguntas_por_prueba"),
+
+
+
+
 
    
    
