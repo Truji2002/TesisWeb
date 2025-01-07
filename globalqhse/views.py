@@ -15,21 +15,24 @@ from django.db import IntegrityError
 from drf_yasg import openapi
 from rest_framework import generics
 from django.db import transaction
+						 
 from django.db import models
 from django_filters.rest_framework import DjangoFilterBackend
 
 from datetime import date
-
+from django.db.models import Q
+import random
+import string
 import logging
 from .models import (
     Usuario, Administrador, Instructor, Estudiante,
-    Curso, Subcurso, Modulo, Empresa, InstructorCurso,Progreso,Certificado,EstudiantePrueba, Prueba, Pregunta
+    Curso, Subcurso, Modulo, Empresa, Contrato,Progreso,Certificado,EstudiantePrueba, Prueba, Pregunta,EstudianteModulo,EstudianteSubcurso
 )
 from .serializers import (
     UsuarioSerializer, AdministradorSerializer, InstructorSerializer, EstudianteSerializer,
     CursoSerializer, AdministradorDetailSerializer, InstructorDetailSerializer,
-    EstudianteDetailSerializer, LoginResponseSerializer, EstudiantePruebaSerializer,  PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer,PreguntaParaPruebaExistenteSerializer,
-    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,InstructorCursoSerializer,ProgresoSerializer
+    EstudianteDetailSerializer, LoginResponseSerializer, EstudiantePruebaSerializer,  PruebaSerializer, PreguntaSerializer,PruebaConPreguntasSerializer,PreguntaParaPruebaExistenteSerializer,EstudianteModuloSerializer,EstudianteSubcursoSerializer,
+    SubcursoSerializer, ModuloSerializer, EmpresaSerializer,RegisterInstructorSerializer,ContratoSerializer,ProgresoSerializer
 )
 from .utils.email import EmailService
 from django.http import FileResponse, Http404, HttpResponse
@@ -146,65 +149,9 @@ class InstructorViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if serializer.is_valid():
-            instructor = serializer.save()
-            temp_password = instructor.generar_contraseña_temporal()
-
-            # Enviar correo con contraseña temporal
-            email_service = EmailService(
-                to_email=instructor.email,
-                subject='Bienvenido a la organización',
-                body=f"""
-                Hola {instructor.first_name},
-
-                Su cuenta ha sido creada exitosamente. Aquí están sus credenciales de acceso:
-
-                - Código de organización: {instructor.codigoOrganizacion}
-                - Contraseña temporal:  {temp_password}
-
-                Por favor, cambie su contraseña después de iniciar sesión.
-
-                Saludos,
-                Global QHSE
-                """
-            )
-            email_service.send_email()
-
-            response_data = serializer.data
-            response_data['temp_password'] = temp_password
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-    def partial_update(self, request, pk=None):
-        try:
-            instructor = Instructor.objects.get(pk=pk)
-            data = request.data
-
-            # Actualizar estado activo/inactivo
-            is_active = data.get('is_active')
-            if is_active is not None:
-                instructor.is_active = is_active
-
-                # Actualizar estado de los estudiantes relacionados
-                Estudiante.objects.filter(codigoOrganizacion=instructor.codigoOrganizacion).update(is_active=is_active)
-
-            # Actualizar otros campos del instructor
-            serializer = InstructorSerializer(instructor, data=data, partial=True)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(
-                    {"message": "Instructor actualizado correctamente.", "instructor": serializer.data},
-                    status=status.HTTP_200_OK,
-                )
-
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Instructor.DoesNotExist:
-            return Response({"error": "Instructor no encontrado."}, status=status.HTTP_404_NOT_FOUND)
-        
+      
+	
+		
     @swagger_auto_schema(
         operation_description="Busca instructores asociados a una empresa por su ID.",
         manual_parameters=[
@@ -255,12 +202,12 @@ class RegisterInstructorAPIView(APIView):
                 'first_name': openapi.Schema(type=openapi.TYPE_STRING, description='Nombre del instructor'),
                 'last_name': openapi.Schema(type=openapi.TYPE_STRING, description='Apellido del instructor'),
                 'email': openapi.Schema(type=openapi.TYPE_STRING, description='Correo electrónico'),
-                'area': openapi.Schema(type=openapi.TYPE_STRING, description='Área de especialización'),
-                'fechaInicioCapacitacion': openapi.Schema(type=openapi.TYPE_STRING, format='date', description='Fecha de inicio de la capacitación'),
-                'fechaFinCapacitacion': openapi.Schema(type=openapi.TYPE_STRING, format='date', description='Fecha de fin de la capacitación'),
+																										  
+																																					  
+																																				
                 'empresa': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID de la empresa a la que pertenece el instructor'),
             },
-            required=['first_name', 'last_name', 'email', 'area', 'fechaInicioCapacitacion', 'fechaFinCapacitacion', 'empresa']
+            required=['first_name', 'last_name', 'email','empresa']
         ),
         responses={
             201: "Instructor creado exitosamente.",
@@ -279,7 +226,7 @@ class RegisterInstructorAPIView(APIView):
                     "first_name": instructor.first_name,
                     "last_name": instructor.last_name,
                     "email": instructor.email,
-                    "codigoOrganizacion": instructor.codigoOrganizacion  # Se devuelve para referencia
+                    
                 }
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -288,11 +235,11 @@ class ModificarInstructorAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAdminUser]
     """
-    API para reemplazar un instructor por uno nuevo, asignándole una contraseña temporal y enviándola por correo.
+    API para reemplazar un instructor reasignando contratos y notificando en un único correo.
     """
 
     @swagger_auto_schema(
-        operation_description="Reemplazar un instructor eliminando al anterior y creando uno nuevo asociado a la misma empresa y codigoOrganizacion.",
+        operation_description="Reemplazar un instructor reasignando los contratos del instructor anterior al nuevo instructor.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
@@ -316,7 +263,7 @@ class ModificarInstructorAPIView(APIView):
             nombre = request.data.get('nombre')
             apellido = request.data.get('apellido')
             email = request.data.get('email')
-            
+			
 
             # Obtener el instructor anterior
             instructor_anterior = Instructor.objects.get(id=instructor_anterior_id)
@@ -326,27 +273,51 @@ class ModificarInstructorAPIView(APIView):
                 first_name=nombre,
                 last_name=apellido,
                 email=email,
-                area=instructor_anterior.area,
-                codigoOrganizacion=instructor_anterior.codigoOrganizacion,
+											  
+																		  
                 empresa=instructor_anterior.empresa,
-                fechaInicioCapacitacion=instructor_anterior.fechaInicioCapacitacion,
-                fechaFinCapacitacion=instructor_anterior.fechaFinCapacitacion,
+																					
+																			  
                 debeCambiarContraseña=True
             )
 
             # Generar una contraseña temporal para el nuevo instructor
             temp_password = nuevo_instructor.generar_contraseña_temporal()
 
-            # Enviar correo al nuevo instructor
+            # Reasignar contratos del instructor anterior al nuevo instructor
+            contratos = Contrato.objects.filter(instructor=instructor_anterior)
+            contratos.update(instructor=nuevo_instructor)
+
+            # Agrupar contratos por `codigoOrganizacion`
+            contratos_por_codigo = {}
+            for contrato in contratos:
+                if contrato.codigoOrganizacion not in contratos_por_codigo:
+                    contratos_por_codigo[contrato.codigoOrganizacion] = []
+                contratos_por_codigo[contrato.codigoOrganizacion].append(contrato)
+
+            # Construir el cuerpo del correo
+            cursos_info = ""
+            for codigo, contratos in contratos_por_codigo.items():
+                cursos_info += f"\nCódigo de organización: {codigo}\n"
+                cursos_info += "\n".join([
+                    f"- {contrato.curso.titulo} (Inicio: {contrato.fechaInicioCapacitacion}, Fin: {contrato.fechaFinCapacitacion})"
+                    for contrato in contratos
+                ])
+                cursos_info += "\n"
+
+            # Enviar correo al nuevo instructor con toda la información
             email_service = EmailService(
                 to_email=nuevo_instructor.email,
-                subject='Bienvenido a la organización',
+                subject='Asignación de contratos',
                 body=f"""
                 Hola {nuevo_instructor.first_name},
 
-                Su cuenta ha sido creada exitosamente. Aquí están sus credenciales de acceso:
+                Usted ha sido asignado como instructor a los siguientes cursos:
 
-                - Código de organización: {nuevo_instructor.codigoOrganizacion}
+                {cursos_info}
+
+                Aquí están sus credenciales de acceso:
+                - Correo electrónico: {nuevo_instructor.email}
                 - Contraseña temporal: {temp_password}
 
                 Por favor, cambie su contraseña después de iniciar sesión.
@@ -360,7 +331,10 @@ class ModificarInstructorAPIView(APIView):
             # Eliminar el instructor anterior
             instructor_anterior.delete()
 
-            return Response({"message": f"Instructor {instructor_anterior.email} reemplazado por {nuevo_instructor.email}."}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": f"Instructor {instructor_anterior.email} reemplazado por {nuevo_instructor.email}."},
+                status=status.HTTP_200_OK
+            )
 
         except Instructor.DoesNotExist:
             return Response({"error": "El instructor anterior no existe."}, status=status.HTTP_400_BAD_REQUEST)
@@ -368,7 +342,7 @@ class ModificarInstructorAPIView(APIView):
             import traceback
             traceback.print_exc()
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+ 
 class EstudianteViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     queryset = Estudiante.objects.all()
@@ -413,20 +387,20 @@ class EstudianteViewSet(viewsets.ModelViewSet):
 
 
 class RegistroEstudianteAPIView(APIView):
-    
+	
 
     """
     API para registrar un estudiante y asignarlo automáticamente a los cursos de su instructor
-    basado en el codigoOrganizacion.
+    basado en el codigoOrganizacion. Si el correo ya existe y es un estudiante, se actualiza el codigoOrganizacion.
     """
     permission_classes = [AllowAny]
 
     @swagger_auto_schema(
-        operation_description="Crear un estudiante y asignarlo automáticamente a los cursos de su instructor en base al codigoOrganizacion.",
+        operation_description="Crear un estudiante y asignarlo automáticamente a los cursos de su instructor en base al codigoOrganizacion. Si el correo ya existe y es un estudiante, se actualiza el codigoOrganizacion.",
         request_body=EstudianteSerializer,  # Usamos el serializer para validar los datos
         responses={
             201: openapi.Response(
-                'Estudiante creado con éxito',
+                'Estudiante creado o actualizado con éxito',
                 openapi.Schema(
                     type=openapi.TYPE_OBJECT,
                     properties={
@@ -461,15 +435,38 @@ class RegistroEstudianteAPIView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Crear el estudiante utilizando los datos validados
-            estudiante = Estudiante.crear_estudiante_con_cursos(
-                email=serializer.validated_data['email'],
-                password=serializer.validated_data['password'],
-                codigoOrganizacion=serializer.validated_data['codigoOrganizacion'],
-                first_name=serializer.validated_data.get('first_name', ''),
-                last_name=serializer.validated_data.get('last_name', '')
-            )
-            return Response({"message": f"Estudiante {estudiante.email} creado exitosamente."}, status=status.HTTP_201_CREATED)
+            email = serializer.validated_data['email']
+            codigo_organizacion = serializer.validated_data['codigoOrganizacion']
+
+            # Verificar si el correo ya existe y pertenece a un estudiante
+            try:
+                estudiante = Estudiante.objects.get(email=email)
+                if estudiante.rol == 'estudiante':
+                    # Actualizar el codigoOrganizacion
+                    estudiante.codigoOrganizacion = codigo_organizacion
+                    estudiante.save()
+                    return Response(
+                        {"message": f"Estudiante {email} actualizado con el nuevo código de organización {codigo_organizacion}."},
+                        status=status.HTTP_200_OK
+                    )
+                else:
+                    return Response(
+                        {"error": "El correo ingresado pertenece a un usuario que no es estudiante."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+            except Estudiante.DoesNotExist:
+                # Crear un nuevo estudiante si no existe
+                estudiante = Estudiante.crear_estudiante_con_cursos(
+                    email=email,
+                    password=serializer.validated_data['password'],
+                    codigoOrganizacion=codigo_organizacion,
+                    first_name=serializer.validated_data.get('first_name', ''),
+                    last_name=serializer.validated_data.get('last_name', '')
+                )
+                return Response(
+                    {"message": f"Estudiante {estudiante.email} creado exitosamente."},
+                    status=status.HTTP_201_CREATED
+                )
 
         except ValidationError as e:
             # Manejo de errores específicos de validación
@@ -477,7 +474,11 @@ class RegistroEstudianteAPIView(APIView):
         except Exception as e:
             # Registrar errores inesperados en el logger
             logger.error(f"Error inesperado al registrar estudiante: {str(e)}")
-            return Response({"error": "Ocurrió un error inesperado. Por favor, intente más tarde."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": "Ocurrió un error inesperado. Por favor, intente más tarde."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
@@ -495,7 +496,8 @@ class LoginView(APIView):
         responses={
             200: openapi.Response("Detalle del usuario autenticado con token"),
             401: "Credenciales inválidas",
-            403: "Cuenta desactivada"
+            403: "Cuenta desactivada",
+            403: "Sin contrato vigente",
         }
     )
     def post(self, request):
@@ -505,18 +507,42 @@ class LoginView(APIView):
         user = authenticate(request, email=email, password=password)
         
         if user is not None:
-            
+			
             if user.is_active:
-                # Identificar el rol del usuario
-                if user.rol == 'admin':
-                    user = Administrador.objects.get(id=user.id)  # Forzar subclase Administrador
-                    serializer = AdministradorDetailSerializer(user)
+                hoy = date.today()
+                
+                # Validar contratos vigentes
+                if user.rol == 'estudiante':
+                    # Forzar al modelo Estudiante
+                    estudiante = Estudiante.objects.get(id=user.id)
+                    
+                    # Buscar contratos asociados al código de organización del estudiante
+                    if not Contrato.objects.filter(
+                        codigoOrganizacion=estudiante.codigoOrganizacion,
+                        activo=True,
+                        fechaInicioCapacitacion__lte=hoy,
+                        fechaFinCapacitacion__gte=hoy
+                    ).exists():
+                        return Response({'error': 'No tiene contratos vigentes asociados.'}, status=status.HTTP_403_FORBIDDEN)
+                    
+                    serializer = EstudianteDetailSerializer(estudiante)
+                
                 elif user.rol == 'instructor':
+                    # Buscar contratos asociados al instructor
+                    if not Contrato.objects.filter(
+                        instructor=user,
+                        activo=True,
+                        fechaInicioCapacitacion__lte=hoy,
+                        fechaFinCapacitacion__gte=hoy
+                    ).exists():
+                        return Response({'error': 'No tiene contratos vigentes asociados.'}, status=status.HTTP_403_FORBIDDEN)
+                    
                     user = Instructor.objects.get(id=user.id)  # Forzar subclase Instructor
                     serializer = InstructorDetailSerializer(user)
-                elif user.rol == 'estudiante':
-                    user = Estudiante.objects.get(id=user.id)  # Forzar subclase Estudiante
-                    serializer = EstudianteDetailSerializer(user)
+                
+                elif user.rol == 'admin':
+                    user = Administrador.objects.get(id=user.id)  # Forzar subclase Administrador
+                    serializer = AdministradorDetailSerializer(user)
                 else:
                     return Response({'error': 'Rol no válido.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -538,6 +564,7 @@ class LoginView(APIView):
                 return Response({'error': 'Cuenta desactivada'}, status=status.HTTP_403_FORBIDDEN)
         else:
             return Response({'error': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+
 
 
 class CambiarContraseñaAPIView(APIView):
@@ -627,6 +654,7 @@ class CursoViewSet(viewsets.ModelViewSet):
             ).update(simulacionCompletada=None)
 
 
+	
 class SubcursoViewSet(viewsets.ModelViewSet):
     authentication_classes = [JWTAuthentication]
     queryset = Subcurso.objects.all()
@@ -712,7 +740,7 @@ class DescargarArchivoModuloAPIView(APIView):
             
 
 
-class InstructorCursoAPIView(APIView):
+class ContratoAPIView(APIView):
     """
     API para gestionar las relaciones entre instructores y cursos.
     """
@@ -723,7 +751,7 @@ class InstructorCursoAPIView(APIView):
             openapi.Parameter('instructor', openapi.IN_QUERY, description="ID del instructor", type=openapi.TYPE_INTEGER),
             openapi.Parameter('curso', openapi.IN_QUERY, description="ID del curso", type=openapi.TYPE_INTEGER),
         ],
-        responses={200: InstructorCursoSerializer(many=True)}
+        responses={200: ContratoSerializer(many=True)}
     )
     def get(self, request):
         instructor_id = request.query_params.get('instructor')
@@ -731,15 +759,15 @@ class InstructorCursoAPIView(APIView):
 
         # Filtrar por los parámetros proporcionados
         if instructor_id and curso_id:
-            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id, curso_id=curso_id)
+            relaciones = Contrato.objects.filter(instructor_id=instructor_id, curso_id=curso_id)
         elif instructor_id:
-            relaciones = InstructorCurso.objects.filter(instructor_id=instructor_id)
+            relaciones = Contrato.objects.filter(instructor_id=instructor_id)
         elif curso_id:
-            relaciones = InstructorCurso.objects.filter(curso_id=curso_id)
+            relaciones = Contrato.objects.filter(curso_id=curso_id)
         else:
-            relaciones = InstructorCurso.objects.all()
+            relaciones = Contrato.objects.all()
 
-        serializer = InstructorCursoSerializer(relaciones, many=True)
+        serializer = ContratoSerializer(relaciones, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
@@ -749,38 +777,91 @@ class InstructorCursoAPIView(APIView):
             properties={
                 'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
                 'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
+                'codigoOrganizacion': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    description='Código de organización asociado al contrato. (Opcional: Si no se proporciona, se generará uno nuevo automáticamente)'
+                )
             },
             required=['instructor', 'curso']
         ),
         responses={
-            201: openapi.Response('Relación creada exitosamente.', InstructorCursoSerializer),
+            201: openapi.Response(
+                'Relación creada exitosamente.',
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'message': openapi.Schema(type=openapi.TYPE_STRING, description='Mensaje de éxito'),
+                    }
+                )
+            ),
             400: 'Error en los datos enviados.',
             500: 'Error interno del servidor.',
         }
     )
+
     def post(self, request):
         instructor_id = request.data.get('instructor')
         curso_id = request.data.get('curso')
+        codigo_organizacion = request.data.get('codigoOrganizacion')  # Parámetro opcional
 
-        # Validar datos
+        # Validar datos obligatorios
         if not instructor_id or not curso_id:
             return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Crear la relación entre instructor y curso
-            relacion = InstructorCurso.objects.create(instructor_id=instructor_id, curso_id=curso_id)
+            with transaction.atomic():
+                # Verificar si se proporcionó un `codigoOrganizacion`
+                if not codigo_organizacion:
+                    # Si no se proporciona, generar un nuevo código basado en el instructor y su empresa
+                    instructor = get_object_or_404(Instructor, id=instructor_id)
+                    prefix = instructor.empresa.nombre[:3].upper()
+                    suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                    codigo_organizacion = f"{prefix}-{suffix}"
 
-            # Obtener el código de organización del instructor
-            codigo_organizacion = relacion.instructor.codigoOrganizacion
+                # Crear la relación entre instructor y curso
+                relacion = Contrato.objects.create(
+                    instructor_id=instructor_id,
+                    curso_id=curso_id,
+                    codigoOrganizacion=codigo_organizacion
+                )
 
-            # Obtener los estudiantes asociados al código de organización
-            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+                # Obtener los estudiantes asociados al `codigoOrganizacion`
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-            # Crear los registros de progreso para los estudiantes
-            Progreso.objects.bulk_create([
-                Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
-                for estudiante in estudiantes
-            ])
+                # Crear los registros necesarios para los estudiantes
+                progreso_records = []
+                estudiante_prueba_records = []
+                estudiante_subcurso_records = []
+                estudiante_modulo_records = []
+
+                for estudiante in estudiantes:
+                    progreso_records.append(
+                        Progreso(estudiante=estudiante, curso_id=curso_id, completado=False, porcentajeCompletado=0)
+                    )
+			  
+
+                    pruebas = Prueba.objects.filter(curso_id=curso_id)
+                    for prueba in pruebas:
+                        estudiante_prueba_records.append(
+                            EstudiantePrueba(estudiante=estudiante, prueba=prueba)
+                        )
+
+                    subcursos = Subcurso.objects.filter(curso_id=curso_id)
+                    for subcurso in subcursos:
+                        estudiante_subcurso_records.append(
+                            EstudianteSubcurso(estudiante=estudiante, subcurso=subcurso, completado=False, porcentajeCompletado=0.0)
+                        )
+
+                        modulos = Modulo.objects.filter(subcurso=subcurso)
+                        for modulo in modulos:
+                            estudiante_modulo_records.append(
+                                EstudianteModulo(estudiante=estudiante, modulo=modulo, completado=False)
+                            )
+
+                Progreso.objects.bulk_create(progreso_records)
+                EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
+                EstudianteSubcurso.objects.bulk_create(estudiante_subcurso_records)
+                EstudianteModulo.objects.bulk_create(estudiante_modulo_records)
 
             return Response({"message": "Relación creada exitosamente."}, status=status.HTTP_201_CREATED)
         except IntegrityError:
@@ -789,14 +870,15 @@ class InstructorCursoAPIView(APIView):
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @swagger_auto_schema(
-        operation_description="Elimina una relación entre un instructor y un curso.",
+        operation_description="Elimina una relación entre un instructor, un curso, y un código de organización.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
             properties={
+                'codigoOrganizacion': openapi.Schema(type=openapi.TYPE_STRING, description='Código de organización del contrato'),
                 'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del instructor'),
                 'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description='ID del curso'),
             },
-            required=['instructor', 'curso']
+            required=['codigoOrganizacion', 'instructor', 'curso']
         ),
         responses={
             200: openapi.Response('Relación eliminada exitosamente.'),
@@ -805,34 +887,52 @@ class InstructorCursoAPIView(APIView):
         }
     )
     def delete(self, request):
+        codigo_organizacion = request.data.get('codigoOrganizacion')
         instructor_id = request.data.get('instructor')
         curso_id = request.data.get('curso')
 
-        if not instructor_id or not curso_id:
-            return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
+        # Validar datos
+        if not codigo_organizacion or not instructor_id or not curso_id:
+            return Response(
+                {"error": "Los campos 'codigoOrganizacion', 'instructor', y 'curso' son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         try:
-            # Obtener la relación
-            relacion = InstructorCurso.objects.get(instructor_id=instructor_id, curso_id=curso_id)
+            with transaction.atomic():
+                # Buscar la relación específica
+                relacion = Contrato.objects.get(
+                    codigoOrganizacion=codigo_organizacion,
+                    instructor_id=instructor_id,
+                    curso_id=curso_id
+                )
+																		
 
-            # Obtener el código de organización del instructor
-            codigo_organizacion = relacion.instructor.codigoOrganizacion
+                # Obtener los estudiantes relacionados con el código de organización
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-            # Obtener los estudiantes asociados al código de organización
-            estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+                # Eliminar registros asociados
+                Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
+                pruebas = Prueba.objects.filter(curso_id=curso_id)
+                EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
+                subcursos = Subcurso.objects.filter(curso_id=curso_id)
+                EstudianteSubcurso.objects.filter(estudiante__in=estudiantes, subcurso__in=subcursos).delete()
+                modulos = Modulo.objects.filter(subcurso__in=subcursos)
+                EstudianteModulo.objects.filter(estudiante__in=estudiantes, modulo__in=modulos).delete()
 
-            # Eliminar los registros de progreso relacionados con los estudiantes y el curso
-            Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
-
-            # Eliminar la relación entre instructor y curso
-            relacion.delete()
+                # Eliminar la relación
+                relacion.delete()
 
             return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
-        except InstructorCurso.DoesNotExist:
-            return Response({"error": "La relación entre el instructor y el curso no fue encontrada."}, status=status.HTTP_404_NOT_FOUND)
+        except Contrato.DoesNotExist:
+            return Response(
+                {"error": "La relación entre el instructor, el curso, y el código de organización no fue encontrada."},
+                status=status.HTTP_404_NOT_FOUND
+            )
         except Exception as e:
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            
+			
 class EstudiantesPorCodigoOrganizacionAPIView(APIView):
     """
     API para buscar estudiantes por código de organización.
@@ -913,6 +1013,7 @@ class EstudiantePruebaViewSet(viewsets.ModelViewSet):
     queryset = EstudiantePrueba.objects.all()
     serializer_class = EstudiantePruebaSerializer
     permission_classes = [IsAuthenticated]
+
 
 
 class EmitirCertificadoAPIView(APIView):
@@ -1134,49 +1235,62 @@ class CertificadoAPIView(APIView):
             )
         
 class ActualizarEstudiantePruebaAPIView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
-
+    """
+    API para actualizar los campos de un registro de EstudiantePrueba.
+    """
     @swagger_auto_schema(
-        operation_description="Califica una prueba basada en las respuestas del estudiante.",
+        operation_description="Actualizar los campos de un registro de EstudiantePrueba basado en estudiante_id y prueba_id.",
         request_body=openapi.Schema(
             type=openapi.TYPE_OBJECT,
+            required=['estudiante_id', 'prueba_id'],
             properties={
                 'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del estudiante"),
                 'prueba_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID de la prueba"),
-                'respuestas': openapi.Schema(
-                    type=openapi.TYPE_OBJECT,
-                    description="Respuestas del estudiante, con el ID de la pregunta como clave y la respuesta seleccionada como valor."
-                ),
-            },
-            required=['estudiante_id', 'prueba_id', 'respuestas']
+                'estaAprobado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de aprobación del estudiante (opcional)"),
+                'calificacion': openapi.Schema(type=openapi.TYPE_NUMBER, description="Calificación obtenida por el estudiante (opcional)")
+                
+            }
         ),
         responses={
-            200: "Prueba calificada exitosamente.",
-            400: "Error en la calificación."
+            200: openapi.Response(
+                description="Registro actualizado correctamente.",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'estaAprobado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de aprobación del estudiante"),
+                        'calificacion': openapi.Schema(type=openapi.TYPE_NUMBER, description="Calificación obtenida"),
+                        'intento': openapi.Schema(type=openapi.TYPE_INTEGER, description="Número de intentos realizados"),
+                        'fechaPrueba': openapi.Schema(type=openapi.TYPE_STRING, format="date", description="Fecha de la prueba")
+                    }
+                )
+            ),
+            400: openapi.Response(description="Error en la solicitud."),
+            404: openapi.Response(description="Registro no encontrado.")
         }
     )
-    def post(self, request):
+    def put(self, request):
         estudiante_id = request.data.get('estudiante_id')
         prueba_id = request.data.get('prueba_id')
-        respuestas = request.data.get('respuestas')
 
-        if not estudiante_id or not prueba_id or not respuestas:
-            return Response(
-                {"error": "Estudiante, prueba y respuestas son requeridos."},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validar los parámetros
+        if not estudiante_id or not prueba_id:
+            return Response({"error": "Los campos 'estudiante_id' y 'prueba_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Obtener el registro
         estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
 
-        estudiante_prueba.calificar(respuestas)
+        # Incrementar intento y actualizar fechaPrueba
+        estudiante_prueba.intento += 1
+        estudiante_prueba.fechaPrueba = date.today()
 
-        return Response({
-            "calificacion": estudiante_prueba.calificacion,
-            "estaAprobado": estudiante_prueba.estaAprobado
-        }, status=status.HTTP_200_OK)
-
-
+        # Serializar y validar los datos restantes
+        serializer = EstudiantePruebaSerializer(estudiante_prueba, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()  # Actualizar el registro con los nuevos datos
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+#### Contratos
 
 
 class PruebasEstudianteAPIView(APIView):
@@ -1352,3 +1466,847 @@ class PreguntasPorPruebaAPIView(APIView):
 
         serializer = PreguntaSerializer(preguntas, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+class CrearContratosAPIView(APIView):
+    """
+    API para crear múltiples contratos y enviar un correo único basado en el `codigoOrganizacion`.
+    """
+    @swagger_auto_schema(
+        operation_description="Crea múltiples contratos y envía un correo único basado en el código de organización.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'contratos': openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'instructor': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del instructor"),
+                            'curso': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del curso"),
+                            'fechaInicioCapacitacion': openapi.Schema(
+                                type=openapi.TYPE_STRING,
+                                format=openapi.FORMAT_DATE,
+                                description="Fecha de inicio de la capacitación"
+                            ),
+                            'fechaFinCapacitacion': openapi.Schema(
+                                type=openapi.TYPE_STRING,
+                                format=openapi.FORMAT_DATE,
+                                description="Fecha de fin de la capacitación"
+                            ),
+                        },
+                        required=['instructor', 'curso', 'fechaInicioCapacitacion', 'fechaFinCapacitacion']
+                    ),
+                    description="Lista de contratos a crear"
+                )
+            },
+            required=['contratos']
+        ),
+        responses={
+            201: openapi.Response("Contratos creados exitosamente."),
+            400: openapi.Response("Error en los datos enviados."),
+            500: openapi.Response("Error interno del servidor."),
+        }
+    )
+    def post(self, request):
+        """
+        Crear múltiples contratos y notificar al instructor por correo.
+        """
+        contratos_data = request.data.get('contratos', [])
+        if not contratos_data:
+            return Response({"error": "Se requiere una lista de contratos."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                contratos_creados = []
+                codigo_organizacion = None
+                instructor = None
+
+                for contrato_data in contratos_data:
+                    serializer = ContratoSerializer(data=contrato_data)
+                    if serializer.is_valid():
+                        contrato = serializer.save()
+                        contratos_creados.append(contrato)
+
+                        # Guardar el código de organización y el instructor del primer contrato creado
+                        if not codigo_organizacion:
+                            codigo_organizacion = contrato.codigoOrganizacion
+                            instructor = contrato.instructor
+
+                        # Obtener los estudiantes asociados al codigoOrganizacion
+                        estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+                        # Crear los registros necesarios para los estudiantes
+                        progreso_records = []
+                        estudiante_prueba_records = []
+                        estudiante_subcurso_records = []
+                        estudiante_modulo_records = []
+
+                        for estudiante in estudiantes:
+                            progreso_records.append(
+                                Progreso(estudiante=estudiante, curso=contrato.curso, completado=False, porcentajeCompletado=0)
+													
+												   
+													
+													
+												 
+			 
+								 
+		 
+                            )
+
+                            pruebas = Prueba.objects.filter(curso=contrato.curso)
+                            for prueba in pruebas:
+                                estudiante_prueba_records.append(
+                                    EstudiantePrueba(estudiante=estudiante, prueba=prueba)
+                                )
+
+                            subcursos = Subcurso.objects.filter(curso=contrato.curso)
+                            for subcurso in subcursos:
+                                estudiante_subcurso_records.append(
+                                    EstudianteSubcurso(estudiante=estudiante, subcurso=subcurso, completado=False, porcentajeCompletado=0.0)
+                                )
+
+                                modulos = Modulo.objects.filter(subcurso=subcurso)
+                                for modulo in modulos:
+                                    estudiante_modulo_records.append(
+                                        EstudianteModulo(estudiante=estudiante, modulo=modulo, completado=False)
+                                    )
+
+                        Progreso.objects.bulk_create(progreso_records)
+                        EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
+                        EstudianteSubcurso.objects.bulk_create(estudiante_subcurso_records)
+                        EstudianteModulo.objects.bulk_create(estudiante_modulo_records)
+                    else:
+                        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+                # Enviar correo al instructor si se crearon contratos
+                if contratos_creados and instructor:
+                    cursos_info = "\n".join([
+                        f"- {contrato.curso.titulo} (Inicio: {contrato.fechaInicioCapacitacion}, Fin: {contrato.fechaFinCapacitacion})"
+                        for contrato in contratos_creados
+                    ])
+                    email_service = EmailService(
+                        to_email=instructor.email,
+                        subject='Asignación de cursos',
+                        body=f"""
+                        Hola {instructor.first_name},
+
+                        Usted ha sido asignado como instructor a los siguientes cursos bajo el código de organización {codigo_organizacion}:
+
+                        {cursos_info}
+
+                        Por favor comparta el código de organización con sus estudiantes para su registro y acceda al sistema para revisar los detalles del progreso de los estudiantes.
+
+                        Saludos,
+                        Equipo de Global QHSE
+                        """
+                    )
+                    email_service.send_email()
+
+                return Response({"message": "Contratos creados exitosamente."}, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class ObtenerContratosAPIView(APIView):
+    """
+    API para obtener todos los contratos asociados a un `codigoOrganizacion`.
+    """
+    @swagger_auto_schema(
+        operation_description="Obtiene todos los contratos asociados a un código de organización.",
+        manual_parameters=[
+            openapi.Parameter('codigoOrganizacion', openapi.IN_QUERY, type=openapi.TYPE_STRING, required=True,
+                              description="Código de organización para filtrar los contratos")
+        ],
+        responses={
+            200: ContratoSerializer(many=True),
+            400: "El parámetro 'codigoOrganizacion' es requerido.",
+        }
+    )
+    def get(self, request):
+        codigo_organizacion = request.query_params.get('codigoOrganizacion')
+
+        if not codigo_organizacion:
+            return Response({"error": "El parámetro 'codigoOrganizacion' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        contratos = Contrato.objects.filter(codigoOrganizacion=codigo_organizacion)
+        serializer = ContratoSerializer(contratos, many=True)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
+class ActualizarContratosAPIView(APIView):
+    """
+    API para actualizar múltiples contratos asociados a un `codigoOrganizacion`.
+    """
+    @swagger_auto_schema(
+        operation_description="Actualiza todos los contratos asociados a un código de organización.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'codigoOrganizacion': openapi.Schema(type=openapi.TYPE_STRING, description="Código de organización"),
+                'fechaInicioCapacitacion': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_DATE,
+                    description="Nueva fecha de inicio de capacitación (opcional)"
+                ),
+                'fechaFinCapacitacion': openapi.Schema(
+                    type=openapi.TYPE_STRING,
+                    format=openapi.FORMAT_DATE,
+                    description="Nueva fecha de fin de capacitación (opcional)"
+                ),
+                'activo': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado del contrato (opcional)"),
+            },
+            required=['codigoOrganizacion']
+        ),
+        responses={
+            200: "Contratos actualizados exitosamente.",
+										 
+							
+												   
+												  
+																		  
+					  
+												   
+												   
+																				
+					  
+											  
+												  
+																					  
+					  
+				  
+			  
+            400: "Error en los datos enviados.",
+            500: "Error interno del servidor.",
+										 
+        }
+    )
+    def patch(self, request):
+        codigo_organizacion = request.data.get('codigoOrganizacion')
+        fecha_inicio = request.data.get('fechaInicioCapacitacion')
+        fecha_fin = request.data.get('fechaFinCapacitacion')
+        activo = request.data.get('activo')
+
+        if not codigo_organizacion:
+            return Response({"error": "El campo 'codigoOrganizacion' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+																	  
+						  
+			 
+
+        try:
+            with transaction.atomic():
+                contratos = Contrato.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+                if not contratos.exists():
+                    return Response(
+                        {"error": "No se encontraron contratos con el código de organización especificado."},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                # Obtener los cursos asociados y los estudiantes
+                cursos_ids = contratos.values_list('curso_id', flat=True)
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+                for contrato in contratos:
+                    if fecha_inicio:
+                        contrato.fechaInicioCapacitacion = fecha_inicio
+                    if fecha_fin:
+                        contrato.fechaFinCapacitacion = fecha_fin
+                    if activo is not None:
+                        contrato.activo = activo
+                        if not activo:  # Si el contrato se inactiva, eliminar registros relacionados
+                            Progreso.objects.filter(estudiante__in=estudiantes, curso_id__in=cursos_ids).delete()
+                            pruebas = Prueba.objects.filter(curso_id__in=cursos_ids)
+                            EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
+                            subcursos = Subcurso.objects.filter(curso_id__in=cursos_ids)
+                            EstudianteSubcurso.objects.filter(estudiante__in=estudiantes, subcurso__in=subcursos).delete()
+                            modulos = Modulo.objects.filter(subcurso__in=subcursos)
+                            EstudianteModulo.objects.filter(estudiante__in=estudiantes, modulo__in=modulos).delete()
+                    contrato.save()
+
+                return Response({"message": "Contratos actualizados exitosamente."}, status=status.HTTP_200_OK)
+														   
+																							  
+								
+
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+														   
+														
+					  
+
+class EliminarContratosAPIView(APIView):
+    """
+    API para eliminar todos los contratos asociados a un `codigoOrganizacion`.
+    """
+    @swagger_auto_schema(
+        operation_description="Elimina todos los contratos asociados a un código de organización.",
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'codigoOrganizacion': openapi.Schema(type=openapi.TYPE_STRING, description="Código de organización"),
+            },
+            required=['codigoOrganizacion']
+        ),
+        responses={
+            200: "Contratos eliminados exitosamente.",
+            400: "Error en los datos enviados.",
+            500: "Error interno del servidor.",
+        }
+    )
+    def delete(self, request):
+        codigo_organizacion = request.data.get('codigoOrganizacion')
+
+        if not codigo_organizacion:
+            return Response({"error": "El campo 'codigoOrganizacion' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                contratos = Contrato.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+                if not contratos.exists():
+                    return Response({"error": "No se encontraron contratos con el código de organización especificado."}, 
+                                    status=status.HTTP_404_NOT_FOUND)
+
+                # Obtener los cursos asociados a los contratos
+                cursos_ids = contratos.values_list('curso_id', flat=True)
+
+                # Obtener los estudiantes asociados al código de organización
+                estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
+
+                # Eliminar registros relacionados
+                Progreso.objects.filter(estudiante__in=estudiantes, curso_id__in=cursos_ids).delete()
+                pruebas = Prueba.objects.filter(curso_id__in=cursos_ids)
+                EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
+                subcursos = Subcurso.objects.filter(curso_id__in=cursos_ids)
+                EstudianteSubcurso.objects.filter(estudiante__in=estudiantes, subcurso__in=subcursos).delete()
+                modulos = Modulo.objects.filter(subcurso__in=subcursos)
+                EstudianteModulo.objects.filter(estudiante__in=estudiantes, modulo__in=modulos).delete()
+
+                # Eliminar los contratos
+                contratos.delete()
+
+                return Response({"message": "Contratos y registros relacionados eliminados exitosamente."}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ContratosPorInstructorAPIView(APIView):
+    """
+    API para obtener todos los contratos asociados al ID del instructor, agrupados por código de organización.
+    """
+    @swagger_auto_schema(
+        operation_description="Obtiene todos los contratos asociados al ID de un instructor, agrupados por código de organización.",
+        manual_parameters=[
+            openapi.Parameter(
+                'instructor_id',
+                openapi.IN_QUERY,
+                description="ID del instructor",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response("Contratos agrupados por código de organización."),
+            400: "Error en los datos enviados."
+											 
+			  
+																	
+        }
+    )
+    def get(self, request):
+        instructor_id = request.query_params.get('instructor_id')
+									   
+
+        if not instructor_id:
+            return Response({"error": "El campo 'instructor_id' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Obtener los contratos asociados al instructor
+            contratos = Contrato.objects.filter(instructor_id=instructor_id)
+				 
+
+            # Si no hay contratos, devolver un resultado vacío
+            if not contratos.exists():
+                return Response({}, status=status.HTTP_200_OK)
+						  
+			 
+
+            # Agrupar los contratos por `codigoOrganizacion`
+            agrupados_por_codigo = {}
+            for contrato in contratos:
+                codigo = contrato.codigoOrganizacion
+                if codigo not in agrupados_por_codigo:
+                    agrupados_por_codigo[codigo] = []
+                agrupados_por_codigo[codigo].append({
+                    "curso_id": contrato.curso.id,
+                    "curso_titulo": contrato.curso.titulo,
+                    "fechaInicioCapacitacion": contrato.fechaInicioCapacitacion,
+                    "fechaFinCapacitacion": contrato.fechaFinCapacitacion,
+                    "activo": contrato.activo if hasattr(contrato, 'activo') else None
+                })
+
+            return Response(agrupados_por_codigo, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+#METRICAS
+
+class GeneralMetricsAPIView(APIView):
+    """
+    API para métricas generales.
+    """
+    def get(self, request):
+        # Métricas generales
+        total_estudiantes = Estudiante.objects.count()
+        total_certificados = Certificado.objects.count()
+        total_pruebas = EstudiantePrueba.objects.count()
+        pruebas_aprobadas = EstudiantePrueba.objects.filter(estaAprobado=True).count()
+
+        # Cálculo de tasas
+        tasa_certificacion = (
+            (total_certificados / total_estudiantes) * 100 if total_estudiantes > 0 else 0
+        )
+        tasa_aprobacion = (
+            (pruebas_aprobadas / total_pruebas) * 100 if total_pruebas > 0 else 0
+        )
+
+        data = {
+            "total_estudiantes": total_estudiantes,
+            "total_certificados": total_certificados,
+            "tasa_certificacion": round(tasa_certificacion, 2),
+            "total_pruebas": total_pruebas,
+            "pruebas_aprobadas": pruebas_aprobadas,
+            "tasa_aprobacion": round(tasa_aprobacion, 2),
+        }
+        return Response(data)
+
+
+
+class FilteredMetricsAPIView(APIView):
+    """
+    API para métricas con filtros.
+    """
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id', None)
+        curso_id = request.query_params.get('curso_id', None)
+
+        # Filtros dinámicos
+        empresa_filter = Q()
+        curso_filter = Q()
+
+        if empresa_id:
+            empresa_filter &= Q(id=empresa_id)
+
+        if curso_id:
+            curso_filter &= Q(id=curso_id)
+
+        # Filtrar estudiantes y certificados
+        total_estudiantes = Estudiante.objects.filter(empresa_filter).count()
+        total_certificados = Certificado.objects.filter(curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
+
+        # Filtrar pruebas
+        total_pruebas = EstudiantePrueba.objects.filter(prueba__curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
+        pruebas_aprobadas = EstudiantePrueba.objects.filter(estaAprobado=True, prueba__curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
+
+        # Calcular tasas
+        tasa_certificacion = (
+            (total_certificados / total_estudiantes) * 100 if total_estudiantes > 0 else 0
+        )
+        tasa_aprobacion = (
+            (pruebas_aprobadas / total_pruebas) * 100 if total_pruebas > 0 else 0
+        )
+
+        data = {
+            "total_estudiantes": total_estudiantes,
+            "total_certificados": total_certificados,
+            "tasa_certificacion": round(tasa_certificacion, 2),
+            "total_pruebas": total_pruebas,
+            "pruebas_aprobadas": pruebas_aprobadas,
+            "tasa_aprobacion": round(tasa_aprobacion, 2),
+        }
+        return Response(data)
+
+
+
+
+#metricas
+
+class EmpresasTotalesAPIView(APIView):
+
+    authentication_classes = [JWTAuthentication]
+   
+    permission_classes = [IsAdminUser]
+    """
+    API para obtener el número total de empresas registradas.
+    """
+    def get(self, request):
+        total_empresas = Empresa.objects.count()
+        return Response({"total_empresas": total_empresas}, status=status.HTTP_200_OK)
+
+
+class UsuariosTotalesAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+
+        if empresa_id:
+            # Validar que la empresa existe
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+
+            # Obtener instructores asociados a la empresa
+            instructores = Instructor.objects.filter(empresa_id=empresa_id)
+            total_instructores = instructores.count()
+
+            # Obtener los códigos de organización a través de contratos
+            codigos_organizacion = Contrato.objects.filter(
+                instructor__empresa_id=empresa_id
+            ).values_list('codigoOrganizacion', flat=True).distinct()
+
+            # Contar estudiantes asociados a esos códigos
+            total_estudiantes = Estudiante.objects.filter(
+                codigoOrganizacion__in=codigos_organizacion
+            ).count()
+        else:
+            # Contar instructores y estudiantes a nivel global
+            total_instructores = Instructor.objects.count()
+            total_estudiantes = Estudiante.objects.count()
+
+        return Response({
+            "total_instructores": total_instructores,
+            "total_estudiantes": total_estudiantes
+        }, status=status.HTTP_200_OK)
+
+    
+class CursosTotalesAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+    """
+    API para obtener el número total de cursos registrados, con opción de filtrar por empresa.
+    """
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+        
+        if empresa_id:
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+            instructores = Instructor.objects.filter(empresa_id=empresa_id).values_list('id', flat=True)
+            total_cursos = Curso.objects.filter(instructores_asignados__instructor_id__in=instructores).distinct().count()
+        else:
+            total_cursos = Curso.objects.count()
+        return Response({"total_cursos": total_cursos}, status=status.HTTP_200_OK)
+    
+class ProgresoPromedioAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+        curso_id = request.query_params.get('curso_id')
+
+        progresos = Progreso.objects.all()
+
+        # Filtrar por empresa
+        if empresa_id:
+            # Validar que la empresa existe
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+
+            # Obtener códigos de organización asociados a los contratos de la empresa
+            codigos_organizacion = Contrato.objects.filter(
+                instructor__empresa_id=empresa_id
+            ).values_list('codigoOrganizacion', flat=True).distinct()
+
+            # Filtrar progresos por estudiantes asociados a los códigos
+            progresos = progresos.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
+
+        # Filtrar por curso
+        if curso_id:
+            # Validar que el curso existe
+            get_object_or_404(Curso, id=curso_id)
+            progresos = progresos.filter(curso_id=curso_id)
+
+        # Calcular progreso promedio
+        progreso_promedio = progresos.aggregate(promedio=models.Avg('porcentajeCompletado'))['promedio'] or 0
+
+        return Response({"progreso_promedio": round(progreso_promedio, 2)}, status=status.HTTP_200_OK)
+
+class SimulacionesCompletadasAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+    
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+        curso_id = request.query_params.get('curso_id')
+
+        # Filtrar progresos relacionados con cursos que tienen simulación
+        progresos = Progreso.objects.filter(curso__simulacion=True)
+
+        # Filtrar por empresa (opcional)
+        if empresa_id:
+            # Validar la existencia de la empresa
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+
+            # Obtener los códigos de organización asociados a los contratos de la empresa
+            codigos_organizacion = Contrato.objects.filter(
+                instructor__empresa_id=empresa_id
+            ).values_list('codigoOrganizacion', flat=True).distinct()
+
+            # Filtrar progresos basados en los códigos de organización
+            progresos = progresos.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
+
+        # Filtrar por curso (opcional)
+        if curso_id:
+            # Validar la existencia del curso
+            get_object_or_404(Curso, id=curso_id)
+
+            # Filtrar progresos relacionados con el curso
+            progresos = progresos.filter(curso_id=curso_id)
+
+        # Calcular métricas
+        total_simulaciones = progresos.count()
+        total_simulaciones_completadas = progresos.filter(simulacionCompletada=True).count()
+        porcentaje_completadas = (total_simulaciones_completadas / total_simulaciones * 100) if total_simulaciones > 0 else 0
+
+        # Respuesta
+        return Response({
+            "total_simulaciones_completadas": total_simulaciones_completadas,
+            "total_simulaciones": total_simulaciones,
+            "porcentaje_completadas": round(porcentaje_completadas, 2)
+        }, status=status.HTTP_200_OK)
+
+    
+
+class TasaCertificacionAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+    
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+        curso_id = request.query_params.get('curso_id')
+
+        certificados = Certificado.objects.all()
+        if empresa_id:
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+            instructores = Instructor.objects.filter(empresa_id=empresa_id).values_list('id', flat=True)
+            certificados = certificados.filter(curso__instructores_asignados__instructor_id__in=instructores)
+        if curso_id:
+            curso = get_object_or_404(Curso, id=curso_id)
+            certificados = certificados.filter(curso_id=curso_id)
+
+        # Obtener estudiantes únicos con al menos un certificado
+        estudiantes_certificados = certificados.values_list('estudiante_id', flat=True).distinct()
+        total_estudiantes_certificados = estudiantes_certificados.count()
+        total_estudiantes = Estudiante.objects.count()
+
+        tasa_certificacion = (total_estudiantes_certificados / total_estudiantes * 100) if total_estudiantes > 0 else 0
+
+        return Response({"tasa_certificacion": round(tasa_certificacion, 2)}, status=status.HTTP_200_OK)
+
+class TasaAprobacionPruebasAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        empresa_id = request.query_params.get('empresa_id')
+        curso_id = request.query_params.get('curso_id')
+
+        # Base queryset para pruebas aprobadas y total de pruebas
+        pruebas_aprobadas = EstudiantePrueba.objects.filter(estaAprobado=True)
+        total_pruebas = EstudiantePrueba.objects.all()
+
+        # Filtrar por empresa si se proporciona
+        if empresa_id:
+            # Validar la existencia de la empresa
+            empresa = get_object_or_404(Empresa, id=empresa_id)
+
+            # Obtener códigos de organización desde los contratos relacionados
+            codigos_organizacion = Contrato.objects.filter(
+                instructor__empresa_id=empresa_id
+            ).values_list('codigoOrganizacion', flat=True).distinct()
+
+            # Aplicar filtro por códigos de organización
+            pruebas_aprobadas = pruebas_aprobadas.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
+            total_pruebas = total_pruebas.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
+
+        # Filtrar por curso si se proporciona
+        if curso_id:
+            # Validar la existencia del curso
+            get_object_or_404(Curso, id=curso_id)
+
+            # Aplicar filtro por curso
+            pruebas_aprobadas = pruebas_aprobadas.filter(prueba__curso_id=curso_id)
+            total_pruebas = total_pruebas.filter(prueba__curso_id=curso_id)
+
+        # Calcular métricas
+        total_aprobados = pruebas_aprobadas.count()
+        total_pruebas = total_pruebas.count()
+        tasa_aprobacion = (total_aprobados / total_pruebas * 100) if total_pruebas > 0 else 0
+
+        # Respuesta
+        return Response({"tasa_aprobacion": round(tasa_aprobacion, 2)}, status=status.HTTP_200_OK)
+
+    
+
+class EstudiantesPorEmpresaAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        """
+        API para obtener el número total de estudiantes asociados a cada empresa.
+        """
+        # Obtener todas las empresas
+        empresas = Empresa.objects.all()
+        data = {}
+
+        for empresa in empresas:
+            # Obtener los códigos de organización asociados a los contratos de los instructores de esta empresa
+            codigos_organizacion = Contrato.objects.filter(
+                instructor__empresa=empresa
+            ).values_list('codigoOrganizacion', flat=True).distinct()
+
+            # Contar estudiantes asociados a esos códigos de organización
+            total_estudiantes = Estudiante.objects.filter(codigoOrganizacion__in=codigos_organizacion).count()
+
+            # Agregar datos al diccionario de respuesta
+            data[empresa.nombre] = total_estudiantes
+
+        return Response(data, status=status.HTTP_200_OK)
+
+    
+
+
+class InstructoresPorEmpresaAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+   
+    permission_classes = [IsAdminUser]
+    """
+    API para obtener el total de instructores registrados por empresa.
+    """
+    def get(self, request):
+        instructores_por_empresa = Empresa.objects.annotate(total_instructores=models.Count('instructores'))
+        data = {empresa.nombre: empresa.total_instructores for empresa in instructores_por_empresa}
+
+        return Response(data, status=status.HTTP_200_OK)
+    
+
+class CursosTasaFinalizacionAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+   
+    permission_classes = [IsAdminUser]
+    """
+    API para obtener los cursos con mayor y menor tasa de finalización.
+    """
+    def get(self, request):
+        # Filtrar cursos con una tasa de finalización no nula
+        cursos = Curso.objects.annotate(
+            tasa_finalizacion=models.Avg('progresos__porcentajeCompletado')
+        ).filter(tasa_finalizacion__isnull=False).order_by('-tasa_finalizacion')
+
+        mayor_finalizacion = cursos.first() if cursos.exists() else None
+        menor_finalizacion = cursos.last() if cursos.exists() else None
+
+        return Response({
+            "curso_mayor_finalizacion": {
+                "titulo": mayor_finalizacion.titulo,
+                "tasa_finalizacion": round(mayor_finalizacion.tasa_finalizacion, 2)
+            } if mayor_finalizacion else None,
+            "curso_menor_finalizacion": {
+                "titulo": menor_finalizacion.titulo,
+                "tasa_finalizacion": round(menor_finalizacion.tasa_finalizacion, 2)
+            } if menor_finalizacion else None,
+        }, status=status.HTTP_200_OK)
+
+
+class EstudianteSubcursoViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = EstudianteSubcurso.objects.all()
+    serializer_class = EstudianteSubcursoSerializer
+    permission_classes = [IsAuthenticated]
+    def get_queryset(self):
+        """
+        Filtra la lista de EstudianteSubcurso en base a los parámetros proporcionados.
+        """
+        queryset = super().get_queryset()
+        id_estudiante = self.request.query_params.get('idEstudiante')
+        id_subcurso = self.request.query_params.get('idSubcurso')
+
+        if id_estudiante:
+            queryset = queryset.filter(estudiante_id=id_estudiante)
+        if id_subcurso:
+            queryset = queryset.filter(subcurso_id=id_subcurso)
+
+        return queryset
+
+
+class EstudianteModuloViewSet(viewsets.ModelViewSet):
+    authentication_classes = [JWTAuthentication]
+    queryset = EstudianteModulo.objects.all()
+    serializer_class = EstudianteModuloSerializer
+    permission_classes = [IsAuthenticated]
+    
+    @action(detail=False, methods=['patch'], url_path='update-completion')
+    def update_completion(self, request):
+        print("Datos recibidos:", request.data) 
+        """
+        Actualiza el estado de completado para un registro EstudianteModulo.
+        Requiere `estudiante_id` y `modulo_id`.
+        """
+        # Validar parámetros requeridos
+        estudiante_id = request.data.get('estudiante_id')
+        modulo_id = request.data.get('modulo_id')
+        completado = request.data.get('completado', False)
+
+        if not estudiante_id or not modulo_id:
+            return Response(
+                {"error": "Los campos 'estudiante_id' y 'modulo_id' son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+		  
+				   
+											   
+										 
+		  
+	 
+						   
+														 
+						 
+																													 
+
+        try:
+            # Validar que los IDs sean enteros
+            estudiante_id = int(estudiante_id)
+            modulo_id = int(modulo_id)
+
+            # Obtener el registro EstudianteModulo
+            estudiante_modulo = get_object_or_404(
+                EstudianteModulo, estudiante_id=estudiante_id, modulo_id=modulo_id
+            )
+
+            # Validar que el campo completado sea un booleano
+            if not isinstance(completado, bool):
+                return Response(
+                    {"error": "El campo 'completado' debe ser un valor booleano."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Actualizar el registro
+            estudiante_modulo.completado = completado
+            estudiante_modulo.save()
+
+            # Serializar y devolver la respuesta
+            serializer = self.get_serializer(estudiante_modulo)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except ValueError:
+            return Response(
+                {"error": "Los campos 'estudiante_id' y 'modulo_id' deben ser enteros."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Ocurrió un error inesperado: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

@@ -1,20 +1,22 @@
 from django.core.management.base import BaseCommand
 from datetime import date
-from globalqhse.models import Instructor
+from globalqhse.models import Contrato
 
 class Command(BaseCommand):
-    help = 'Inactiva a los instructores cuya fecha fin de capacitación ha culminado.'
+    help = 'Inactiva los contratos cuya fecha fin de capacitación ha culminado.'
 
     def handle(self, *args, **kwargs):
         hoy = date.today()
-        instructores_a_inactivar = Instructor.objects.filter(
+
+        # Filtrar contratos cuya fecha de fin de capacitación ya pasó y que están activos
+        contratos_a_inactivar = Contrato.objects.filter(
             fechaFinCapacitacion__lt=hoy,
-            is_active=True  # Solo inactiva instructores activos
+            activo=True  # Solo inactiva contratos activos
         )
 
-        for instructor in instructores_a_inactivar:
-            instructor.is_active = False
-            instructor.save()
-            self.stdout.write(f"Instructor {instructor.email} inactivado.")
+        for contrato in contratos_a_inactivar:
+            contrato.activo = False
+            contrato.save()
+            self.stdout.write(f"Contrato con código de organización {contrato.codigoOrganizacion} y curso {contrato.curso.titulo} inactivado.")
 
-        self.stdout.write(f"Proceso completado. Total instructores inactivados: {instructores_a_inactivar.count()}")
+        self.stdout.write(f"Proceso completado. Total contratos inactivados: {contratos_a_inactivar.count()}")
