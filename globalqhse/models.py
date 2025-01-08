@@ -315,26 +315,25 @@ class Progreso(models.Model):
         self.save()
         self._skip_post_save = False
 
-
 class Estudiante(Usuario):
-    
+   
     codigoOrganizacion = models.CharField(max_length=100, blank=False)
-
+ 
     class Meta:
         verbose_name = "Estudiante"
         verbose_name_plural = "Estudiantes"
-
+ 
     def __str__(self):
-        
+       
         return f"Estudiante: {self.email}"
-
+ 
     def save(self, *args, **kwargs):
         self.rol = 'estudiante'
         # Validar que el código de organización sea válido
         if not Contrato.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exists():
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         super().save(*args, **kwargs)
-
+ 
     @classmethod
     def crear_estudiante_con_cursos(cls, email, password, codigoOrganizacion, **kwargs):
         """
@@ -344,8 +343,10 @@ class Estudiante(Usuario):
         """
         try:
             # Verificar que el código de organización es válido
-            contrato = Contrato.objects.get(codigoOrganizacion=codigoOrganizacion)
-
+            contratos = Contrato.objects.filter(codigoOrganizacion=codigoOrganizacion)
+            if not contratos.exists():
+                raise ValidationError("El código de organización ingresado no corresponde a ningún contrato válido.")
+ 
             # Crear el estudiante
             with transaction.atomic():
                 estudiante = cls.objects.create(
@@ -355,16 +356,15 @@ class Estudiante(Usuario):
                 )
                 estudiante.set_password(password)  # Configurar contraseña segura
                 estudiante.save()
-
-                # Inscribir al estudiante en los cursos del instructor
-                cursos = Curso.objects.filter(
-                    contratos__codigoOrganizacion=codigoOrganizacion
-                )
+ 
+                # Inscribir al estudiante en los cursos de los contratos
+                cursos_ids = contratos.values_list('curso_id', flat=True)
+                cursos = Curso.objects.filter(id__in=cursos_ids)
                 progreso_records = []
                 estudiante_prueba_records = []
                 estudiante_subcurso_records = []
                 estudiante_modulo_records = []
-
+ 
                 for curso in cursos:
                     # Crear registros de progreso
                     progreso_records.append(
@@ -376,41 +376,41 @@ class Estudiante(Usuario):
                             simulacionCompletada=False
                         )
                     )
-
+ 
                     # Buscar pruebas asociadas al curso y crear registros de EstudiantePrueba
                     pruebas = Prueba.objects.filter(curso=curso)
                     for prueba in pruebas:
                         estudiante_prueba_records.append(
                             EstudiantePrueba(estudiante=estudiante, prueba=prueba)
                         )
-
+ 
                     # Crear registros en EstudianteSubcurso para los subcursos del curso
                     subcursos = Subcurso.objects.filter(curso=curso)
                     for subcurso in subcursos:
                         estudiante_subcurso_records.append(
                             EstudianteSubcurso(estudiante=estudiante, subcurso=subcurso, completado=False, porcentajeCompletado=0.0)
                         )
-
+ 
                         # Crear registros en EstudianteModulo para los módulos del subcurso
                         modulos = Modulo.objects.filter(subcurso=subcurso)
                         for modulo in modulos:
                             estudiante_modulo_records.append(
                                 EstudianteModulo(estudiante=estudiante, modulo=modulo, completado=False)
                             )
-
+ 
                 # Guardar registros en la base de datos
                 Progreso.objects.bulk_create(progreso_records)
                 EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
                 EstudianteSubcurso.objects.bulk_create(estudiante_subcurso_records)
                 EstudianteModulo.objects.bulk_create(estudiante_modulo_records)
-
+ 
             return estudiante
-
-        except Instructor.DoesNotExist:
-            raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
+ 
+        except ValidationError as e:
+            raise e
         except Exception as e:
             raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
-
+        
 class EstudiantePrueba(models.Model):
     estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="progresos_prueba")
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name="progresos")

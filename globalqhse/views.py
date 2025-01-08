@@ -15,6 +15,8 @@ from django.db import IntegrityError
 from drf_yasg import openapi
 from rest_framework import generics
 from django.db import transaction
+from django.utils.dateparse import parse_date
+
 						 
 from django.db import models
 from django_filters.rest_framework import DjangoFilterBackend
@@ -1234,6 +1236,7 @@ class CertificadoAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
+# views.py
 class ActualizarEstudiantePruebaAPIView(APIView):
     """
     API para actualizar los campos de un registro de EstudiantePrueba.
@@ -1248,7 +1251,7 @@ class ActualizarEstudiantePruebaAPIView(APIView):
                 'prueba_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID de la prueba"),
                 'estaAprobado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de aprobación del estudiante (opcional)"),
                 'calificacion': openapi.Schema(type=openapi.TYPE_NUMBER, description="Calificación obtenida por el estudiante (opcional)")
-                
+               
             }
         ),
         responses={
@@ -1268,29 +1271,27 @@ class ActualizarEstudiantePruebaAPIView(APIView):
             404: openapi.Response(description="Registro no encontrado.")
         }
     )
-    def put(self, request):
+    def patch(self, request):
         estudiante_id = request.data.get('estudiante_id')
         prueba_id = request.data.get('prueba_id')
-
+ 
         # Validar los parámetros
         if not estudiante_id or not prueba_id:
             return Response({"error": "Los campos 'estudiante_id' y 'prueba_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
-
+ 
         # Obtener el registro
         estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
-
+ 
         # Incrementar intento y actualizar fechaPrueba
         estudiante_prueba.intento += 1
         estudiante_prueba.fechaPrueba = date.today()
-
+ 
         # Serializar y validar los datos restantes
         serializer = EstudiantePruebaSerializer(estudiante_prueba, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()  # Actualizar el registro con los nuevos datos
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-#### Contratos
 
 
 class PruebasEstudianteAPIView(APIView):
