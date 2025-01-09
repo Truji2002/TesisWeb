@@ -14,7 +14,7 @@ from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet,CertificadoA
 from .views import ModulosPorSubcursoAPIView,ContratoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView,EstudianteModuloViewSet,EstudianteSubcursoViewSet
 from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView,SimulacionesCompletadasAPIView
-from .views import FilteredMetricsAPIView,GeneralMetricsAPIView
+from .views import FilteredMetricsAPIView,GeneralMetricsAPIView,VRLoginView,InstructorGeneralMetricsAPIView,InstructorCursosTasaFinalizacionAPIView
 from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)
@@ -53,6 +53,7 @@ urlpatterns = [
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
     path('login/', LoginView.as_view(), name='login'),
+    path('login-vr/', VRLoginView.as_view(), name='login_vr'),
     path('cambiarPassword/', CambiarContraseñaAPIView.as_view(), name='cambiar_password'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
@@ -84,6 +85,9 @@ urlpatterns = [
     path('obtener-contrato-por-instructor/', ContratosPorInstructorAPIView.as_view(), name='obtener_contrato_por_instructor'),
     path('metricas-general/', GeneralMetricsAPIView.as_view(), name='metricas_general'),
     path('metricas-filtro/', FilteredMetricsAPIView.as_view(), name='metricas_filtro'),
+    path('metricas-instructor/', InstructorGeneralMetricsAPIView.as_view(), name='metricas_instructor'),
+    path('metricas-instructor-finalizacion/', InstructorCursosTasaFinalizacionAPIView.as_view(), name='metricas_instructor_finalizacion'),
+
    
    
 ]

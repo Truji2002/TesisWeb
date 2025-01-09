@@ -146,28 +146,28 @@ class Contrato(models.Model):
     class Meta:
         verbose_name = "Contrato"
         verbose_name_plural = "Contratos"
+        unique_together = ('instructor', 'curso', 'activo')
 
     def __str__(self):
         return f"{self.instructor.email} - {self.curso.titulo}"
     
+    
     def save(self, *args, **kwargs):
+            # Si `force_codigo` se estableció previamente, úsalo
+            if hasattr(self, '_force_codigo') and self._force_codigo:
+                self.codigoOrganizacion = self._force_codigo
+            elif not self.codigoOrganizacion:  # Generar un nuevo código solo si no hay uno existente
+                prefix = self.instructor.empresa.nombre[:3].upper()
+                suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                self.codigoOrganizacion = f"{prefix}-{suffix}"
 
-        # Verificar si existe un contrato con las mismas fechas de capacitación
-        contrato_existente = Contrato.objects.filter(
-            fechaInicioCapacitacion=self.fechaInicioCapacitacion,
-            fechaFinCapacitacion=self.fechaFinCapacitacion
-        ).first()
+            super().save(*args, **kwargs)
 
-        if contrato_existente:
-            # Reutilizar el `codigoOrganizacion` del contrato existente
-            self.codigoOrganizacion = contrato_existente.codigoOrganizacion
-        else:
-            # Generar un nuevo código si no existe un contrato con las mismas fechas
-            prefix = self.instructor.empresa.nombre[:3].upper()
-            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-            self.codigoOrganizacion = f"{prefix}-{suffix}"
-
-        super().save(*args, **kwargs)
+    def set_force_codigo(self, codigo):
+            """
+            Método para establecer un código forzado antes de guardar.
+            """
+            self._force_codigo = codigo
 
     @classmethod
     def obtener_contratos_activos(cls):
@@ -349,7 +349,9 @@ class Estudiante(Usuario):
         """
         try:
             # Verificar que el código de organización es válido
-            contrato = Contrato.objects.get(codigoOrganizacion=codigoOrganizacion)
+            contratos = Contrato.objects.filter(codigoOrganizacion=codigoOrganizacion)
+            if not contratos.exists():
+                raise ValidationError("El código de organización ingresado no corresponde a ningún contrato válido.")
 
             # Crear el estudiante
             with transaction.atomic():
@@ -361,10 +363,9 @@ class Estudiante(Usuario):
                 estudiante.set_password(password)  # Configurar contraseña segura
                 estudiante.save()
 
-                # Inscribir al estudiante en los cursos del instructor
-                cursos = Curso.objects.filter(
-                    contratos__codigoOrganizacion=codigoOrganizacion
-                )
+                # Inscribir al estudiante en los cursos de los contratos
+                cursos_ids = contratos.values_list('curso_id', flat=True)
+                cursos = Curso.objects.filter(id__in=cursos_ids)
                 progreso_records = []
                 estudiante_prueba_records = []
                 estudiante_subcurso_records = []
@@ -411,8 +412,8 @@ class Estudiante(Usuario):
 
             return estudiante
 
-        except Instructor.DoesNotExist:
-            raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
+        except ValidationError as e:
+            raise e
         except Exception as e:
             raise ValidationError(f"Ocurrió un error al crear el estudiante: {str(e)}")
 

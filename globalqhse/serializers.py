@@ -272,11 +272,8 @@ class ContratoSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        """
-        Crear una nueva instancia del modelo Contrato, gestionando el código de organización.
-        """
-        # Reutiliza el método `save` definido en el modelo
-        contrato = Contrato.objects.create(**validated_data)
+        contrato = Contrato(**validated_data)  # Crear una instancia pero no guardar aún
+        contrato.save()  # Aquí se llama al método save del modelo
         return contrato
     
 class ProgresoSerializer(serializers.ModelSerializer):
