@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
-from .views import PreguntasPorPruebaAPIView
+from .views import InstructorCursosTasaFinalizacionAPIView, InstructorGeneralMetricsAPIView, PreguntasPorPruebaAPIView
 
 
 
@@ -20,9 +20,9 @@ from .views import SubcursosPorCursoAPIView,EstudiantePruebaViewSet, PreguntaVie
 from .views import ModulosPorSubcursoAPIView,ContratoAPIView,EstudiantesPorCodigoOrganizacionAPIView,ProgresoViewSet,EmitirCertificadoAPIView
 from .views import PruebasEstudianteAPIView
 from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIView,EstudianteModuloViewSet,EstudianteSubcursoViewSet
-from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView,SimulacionesCompletadasAPIView
+from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView
 from .views import FilteredMetricsAPIView,GeneralMetricsAPIView
-from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView
+from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView, VRLoginView,SimulacionesCompletadasAPIView
 
 
 
@@ -98,7 +98,11 @@ urlpatterns = [
     path('obtener-contrato-por-instructor/', ContratosPorInstructorAPIView.as_view(), name='obtener_contrato_por_instructor'),
     path('metricas-general/', GeneralMetricsAPIView.as_view(), name='metricas_general'),
     path('metricas-filtro/', FilteredMetricsAPIView.as_view(), name='metricas_filtro'),
-   
+    path('login-vr/', VRLoginView.as_view(), name='login_vr'),
+    path('metricas-instructor/', InstructorGeneralMetricsAPIView.as_view(), name='metricas_instructor'),
+    path('metricas-instructor-finalizacion/', InstructorCursosTasaFinalizacionAPIView.as_view(), name='metricas_instructor_finalizacion'),
+
+
   
 
 

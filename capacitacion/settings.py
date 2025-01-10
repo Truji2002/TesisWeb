@@ -177,7 +177,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'es'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Guayaquil'
 
 USE_I18N = True
 
@@ -206,7 +206,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # Origen del frontend
-    "http://192.168.1.47:8000",
+    "http://172.20.10.2:8000",
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 

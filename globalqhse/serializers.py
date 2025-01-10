@@ -256,8 +256,7 @@ class ContratoSerializer(serializers.ModelSerializer):
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
     instructor_nombre = serializers.CharField(source='instructor.first_name', read_only=True)
     curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
-																		
-
+ 
     class Meta:
         model = Contrato
         fields = [
@@ -278,27 +277,25 @@ class ContratoSerializer(serializers.ModelSerializer):
             'curso': {'write_only': True},  # Permitir solo el ID para escritura
             'activo': {'default': True},
         }
-
+ 
     def validate(self, data):
         """
         Validar que las fechas sean coherentes y no se solapen.
         """
         fecha_inicio = data.get('fechaInicioCapacitacion')
         fecha_fin = data.get('fechaFinCapacitacion')
-
+ 
         if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
             raise serializers.ValidationError(
                 {"fechaInicioCapacitacion": "La fecha de inicio no puede ser posterior a la fecha de fin."}
             )
         return data
-
+ 
     def create(self, validated_data):
-        """
-        Crear una nueva instancia del modelo Contrato, gestionando el código de organización.
-        """
-        # Reutiliza el método `save` definido en el modelo
-        contrato = Contrato.objects.create(**validated_data)
+        contrato = Contrato(**validated_data)  # Crear una instancia pero no guardar aún
+        contrato.save()  # Aquí se llama al método save del modelo
         return contrato
+    
 class ProgresoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Progreso

@@ -2,7 +2,15 @@ from datetime import datetime
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from reportlab.pdfgen import canvas
+from reportlab.lib.colors import HexColor
+from reportlab.lib.styles import getSampleStyleSheet
 
+from reportlab.lib.pagesizes import letter
+from rest_framework.response import Response
+from rest_framework import status
+
+from reportlab.platypus import Paragraph, Frame, Spacer
 from django.core.exceptions import ValidationError
 import random
 import string
@@ -10,8 +18,16 @@ import secrets
 from django.db import transaction
 from django.core.files.base import File
 from reportlab.pdfgen import canvas
+import os
+from reportlab.lib.utils import ImageReader
 import io
+from django.utils import timezone
+
 import logging
+from io import BytesIO
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
 logger = logging.getLogger(__name__)
 
 
@@ -140,39 +156,38 @@ class Contrato(models.Model):
     fechaInicioCapacitacion = models.DateField()
     fechaFinCapacitacion = models.DateField()
     activo = models.BooleanField(default=True)
-
+ 
     class Meta:
         verbose_name = "Contrato"
         verbose_name_plural = "Contratos"
-																	 
-
+        unique_together = ('instructor', 'curso', 'activo')
+ 
     def __str__(self):
         return f"{self.instructor.email} - {self.curso.titulo}"
-    
+   
+   
     def save(self, *args, **kwargs):
-
-        # Verificar si existe un contrato con las mismas fechas de capacitación
-        contrato_existente = Contrato.objects.filter(
-            fechaInicioCapacitacion=self.fechaInicioCapacitacion,
-            fechaFinCapacitacion=self.fechaFinCapacitacion
-        ).first()
-
-        if contrato_existente:
-            # Reutilizar el `codigoOrganizacion` del contrato existente
-            self.codigoOrganizacion = contrato_existente.codigoOrganizacion
-        else:
-            # Generar un nuevo código si no existe un contrato con las mismas fechas
-            prefix = self.instructor.empresa.nombre[:3].upper()
-            suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
-            self.codigoOrganizacion = f"{prefix}-{suffix}"
-
-        super().save(*args, **kwargs)
-
+            # Si `force_codigo` se estableció previamente, úsalo
+            if hasattr(self, '_force_codigo') and self._force_codigo:
+                self.codigoOrganizacion = self._force_codigo
+            elif not self.codigoOrganizacion:  # Generar un nuevo código solo si no hay uno existente
+                prefix = self.instructor.empresa.nombre[:3].upper()
+                suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
+                self.codigoOrganizacion = f"{prefix}-{suffix}"
+ 
+            super().save(*args, **kwargs)
+ 
+    def set_force_codigo(self, codigo):
+            """
+            Método para establecer un código forzado antes de guardar.
+            """
+            self._force_codigo = codigo
+ 
     @classmethod
     def obtener_contratos_activos(cls):
         return cls.objects.filter(fechaFinCapacitacion__gte=datetime.date.today())
-        
-  
+       
+ 
     def clean(self):
         if self.fechaInicioCapacitacion > self.fechaFinCapacitacion:
             raise ValidationError("La fecha de inicio de la capacitación no puede ser posterior a la fecha de fin.")
@@ -448,15 +463,18 @@ class EstudiantePrueba(models.Model):
 
 
     
-
 class Certificado(models.Model):
-    estudiante = models.ForeignKey(Estudiante, on_delete=models.CASCADE, related_name="certificados",null=True)
-    curso = models.ForeignKey(Curso, on_delete=models.CASCADE, related_name="certificados")
+    estudiante = models.ForeignKey(
+        Estudiante, on_delete=models.CASCADE, related_name="certificados", null=True
+    )
+    curso = models.ForeignKey(
+        Curso, on_delete=models.CASCADE, related_name="certificados"
+    )
     fechaEmision = models.DateField(auto_now_add=True)
-    archivoPdf = models.FileField(upload_to='certificados/', null=True, blank=True)  # Opcional, para guardar el archivo PDF del certificado
+    archivoPdf = models.FileField(upload_to="certificados/", null=True, blank=True)
 
     class Meta:
-        unique_together = ('estudiante', 'curso')  # Un estudiante no puede tener más de un certificado por curso.
+        unique_together = ("estudiante", "curso")
 
     def __str__(self):
         return f"Certificado de {self.estudiante.email} para {self.curso.titulo}"
@@ -464,7 +482,7 @@ class Certificado(models.Model):
     @classmethod
     def emitir_certificado(cls, estudiante, curso):
         """
-        Genera un certificado si el estudiante ha completado el curso.
+        Genera un certificado con diseño mejorado si el estudiante ha completado el curso.
         """
         try:
             # Verificar si el estudiante ya completó el curso
@@ -484,10 +502,74 @@ class Certificado(models.Model):
 
             # Generar el archivo PDF del certificado
             buffer = io.BytesIO()
-            pdf = canvas.Canvas(buffer)
-            pdf.drawString(100, 750, "Certificado de Finalización")
-            pdf.drawString(100, 730, f"Otorgado a: {estudiante.first_name} {estudiante.last_name}")
-            pdf.drawString(100, 710, f"Por completar satisfactoriamente el curso: {curso.titulo}")
+            pdf = canvas.Canvas(buffer, pagesize=letter)
+
+            # Diseño básico del certificado
+            width, height = letter
+
+            # Fondo opcional
+            pdf.setFillColor(HexColor("#f7f7f7"))
+            pdf.rect(0, 0, width, height, fill=1)
+
+            # Título
+            pdf.setFont("Helvetica-Bold", 24)
+            pdf.setFillColor(HexColor("#333333"))
+            pdf.drawCentredString(width / 2, height - 100, "Certificado de Finalización")
+
+            # Texto descriptivo
+            pdf.setFont("Helvetica", 14)
+            pdf.drawCentredString(
+                width / 2,
+                height - 140,
+                f"Se otorga el presente certificado a:"
+            )
+
+            # Nombre del estudiante
+            pdf.setFont("Helvetica-Bold", 18)
+            pdf.setFillColor(HexColor("#4444aa"))
+            pdf.drawCentredString(
+                width / 2,
+                height - 180,
+                f"{estudiante.first_name} {estudiante.last_name}"
+            )
+
+            # Detalles del curso
+            pdf.setFont("Helvetica", 14)
+            pdf.setFillColor(HexColor("#333333"))
+            pdf.drawCentredString(
+                width / 2,
+                height - 220,
+                f"Por haber completado satisfactoriamente el curso:"
+            )
+
+            # Título del curso
+            pdf.setFont("Helvetica-Bold", 16)
+            pdf.setFillColor(HexColor("#4444aa"))
+            pdf.drawCentredString(
+                width / 2,
+                height - 260,
+                curso.titulo
+            )
+
+            # Fecha de emisión
+            pdf.setFont("Helvetica", 12)
+            pdf.setFillColor(HexColor("#666666"))
+            pdf.drawCentredString(
+                width / 2,
+                height - 300,
+                f"Fecha de emisión: {timezone.now().strftime('%d de %B de %Y')}"
+            )
+
+            # Firma (opcional)
+            pdf.setFont("Helvetica-Oblique", 12)
+            pdf.drawCentredString(
+                width / 2,
+                height - 340,
+                "_________________________"
+            )
+            pdf.drawCentredString(width / 2, height - 360, "Firma Autorizada")
+
+            # Guardar PDF
             pdf.save()
             buffer.seek(0)
 
@@ -500,8 +582,21 @@ class Certificado(models.Model):
 
         except Exception as e:
             return f"Error al emitir el certificado: {str(e)}"
+    def post(self, request):
+        estudiante_id = request.data.get('estudiante_id')
+        curso_id = request.data.get('curso_id')
 
+        if not estudiante_id or not curso_id:
+            return Response({"error": "Faltan los parámetros 'estudiante_id' y 'curso_id'."}, status=status.HTTP_400_BAD_REQUEST)
 
+        try:
+            certificado = Certificado.objects.filter(estudiante_id=estudiante_id, curso_id=curso_id)
+            if certificado.exists():
+                certificado.delete()
+                return Response({"message": "Certificado eliminado exitosamente."}, status=status.HTTP_200_OK)
+            return Response({"error": "Certificado no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class Pregunta(models.Model):
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
