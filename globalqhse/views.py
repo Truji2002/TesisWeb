@@ -805,7 +805,69 @@ class CursoViewSet(viewsets.ModelViewSet):
             Progreso.objects.filter(
                 curso=instance
             ).update(simulacionCompletada=None)
-
+    @swagger_auto_schema(
+        operation_description="Obtiene los cursos con simulación pendientes de completar para un estudiante.",
+        manual_parameters=[
+            openapi.Parameter(
+                'estudiante_id',
+                openapi.IN_QUERY,
+                description="ID del estudiante para filtrar los cursos pendientes de simulación.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                description="Cursos pendientes de simulación",
+                schema=openapi.Schema(
+                    type=openapi.TYPE_ARRAY,
+                    items=openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del curso"),
+                            'titulo': openapi.Schema(type=openapi.TYPE_STRING, description="Título del curso"),
+                            'descripcion': openapi.Schema(type=openapi.TYPE_STRING, description="Descripción del curso"),
+                            'simulacion': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Indica si el curso tiene simulación habilitada"),
+                            'fecha_inicio': openapi.Schema(type=openapi.FORMAT_DATE, description="Fecha de inicio del curso"),
+                            'fecha_fin': openapi.Schema(type=openapi.FORMAT_DATE, description="Fecha de fin del curso"),
+                        }
+                    )
+                )
+            ),
+            400: openapi.Response(
+                description="Error en los parámetros de la consulta",
+                examples={
+                    "application/json": {"error": "El parámetro 'estudiante_id' es requerido."}
+                }
+            )
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='pendientes-simulacion')
+    def pendientes_simulacion(self, request):
+        """
+        Obtiene los cursos asociados a un estudiante que tienen simulación habilitada
+        y donde el progreso no está marcado como completado.
+        """
+        estudiante_id = request.query_params.get('estudiante_id')
+        if not estudiante_id:
+            return Response(
+                {"error": "El parámetro 'estudiante_id' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
+        # Filtrar progresos donde la simulación no está completada
+        progresos = Progreso.objects.filter(
+            estudiante_id=estudiante_id,
+            simulacionCompletada=False,
+            curso__simulacion=True  # Solo cursos con simulación habilitada
+        ).select_related('curso')
+ 
+        # Obtener los cursos únicos
+        cursos = {progreso.curso for progreso in progresos}
+ 
+        # Serializar los cursos
+        serializer = self.get_serializer(cursos, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 	
 class SubcursoViewSet(viewsets.ModelViewSet):
