@@ -1875,22 +1875,6 @@ class ActualizarContratosAPIView(APIView):
         ),
         responses={
             200: "Contratos actualizados exitosamente.",
-										 
-							
-												   
-												  
-																		  
-					  
-												   
-												   
-																				
-					  
-											  
-												  
-																					  
-					  
-				  
-			  
             400: "Error en los datos enviados.",
             500: "Error interno del servidor.",
 										 
@@ -1945,6 +1929,8 @@ class ActualizarContratosAPIView(APIView):
 								
 
         except Exception as e:
+            traceback_str = traceback.format_exc()
+            logger.error(f"Error inesperado en ActualizarContratoAPIView: {traceback_str}")
             return Response({"error": f"Ocurrió un error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 														   
 														

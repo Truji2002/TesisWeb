@@ -5,6 +5,7 @@ from django.conf import settings
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import getSampleStyleSheet
+from django.db.models import Q
 
 from reportlab.lib.pagesizes import letter
 from rest_framework.response import Response
@@ -160,7 +161,13 @@ class Contrato(models.Model):
     class Meta:
         verbose_name = "Contrato"
         verbose_name_plural = "Contratos"
-        unique_together = ('instructor', 'curso', 'activo')
+        constraints = [
+        models.UniqueConstraint(
+            fields=['instructor', 'curso', 'activo'],
+            name='unique_instructor_curso_activo',
+            condition=Q(activo=True)  # Solo aplica cuando `activo=True`
+        )
+    ]
  
     def __str__(self):
         return f"{self.instructor.email} - {self.curso.titulo}"
