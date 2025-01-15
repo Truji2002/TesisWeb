@@ -19,12 +19,9 @@ from django.db import transaction
 from django.db.models import Avg
 from django.utils.timezone import now
 from django.db.models import Q
-from django.utils.dateparse import parse_date
-
-						 
+from django.utils.dateparse import parse_date			 
 from django.db import models
 from django_filters.rest_framework import DjangoFilterBackend
-
 from datetime import date
 from django.db.models import Q
 import random
@@ -161,16 +158,16 @@ class VRLoginView(APIView):
         password = request.data.get('password')
         curso_id = request.data.get('curso_id')
 
-        # Validar autenticación del usuario
+        
         user = authenticate(request, email=email, password=password)
 
         if user is not None:
             if user.is_active and user.rol == 'estudiante':
                 try:
-                    # Buscar al estudiante autenticado
+                    
                     estudiante = Estudiante.objects.get(id=user.id)
 
-                    # Validar que el curso tiene simulación habilitada
+                    
                     curso = Curso.objects.filter(id=curso_id, simulacion=True).first()
                     if not curso:
                         return Response(
@@ -178,7 +175,7 @@ class VRLoginView(APIView):
                             status=status.HTTP_403_FORBIDDEN
                         )
 
-                    # Validar que el estudiante tiene un progreso activo en el curso
+                    
                     progreso = Progreso.objects.filter(
                         estudiante=estudiante,
                         curso_id=curso_id,
@@ -191,7 +188,7 @@ class VRLoginView(APIView):
                             status=status.HTTP_403_FORBIDDEN
                         )
 
-                    # Generar tokens
+                    
                     refresh = RefreshToken.for_user(user)
 
                     return Response(
@@ -248,13 +245,13 @@ class EliminarContratosAPIView(APIView):
                     return Response({"error": "No se encontraron contratos con el código de organización especificado."},
                                     status=status.HTTP_404_NOT_FOUND)
  
-                # Obtener los cursos asociados a los contratos
+                
                 cursos_ids = contratos.values_list('curso_id', flat=True)
  
-                # Obtener los estudiantes asociados al código de organización
+                
                 estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
  
-                # Eliminar registros relacionados
+                
                 Progreso.objects.filter(estudiante__in=estudiantes, curso_id__in=cursos_ids).delete()
                 pruebas = Prueba.objects.filter(curso_id__in=cursos_ids)
                 EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
@@ -263,7 +260,7 @@ class EliminarContratosAPIView(APIView):
                 modulos = Modulo.objects.filter(subcurso__in=subcursos)
                 EstudianteModulo.objects.filter(estudiante__in=estudiantes, modulo__in=modulos).delete()
  
-                # Eliminar los contratos
+                
                 contratos.delete()
  
                 return Response({"message": "Contratos y registros relacionados eliminados exitosamente."}, status=status.HTTP_200_OK)
@@ -281,10 +278,10 @@ class InstructorViewSet(viewsets.ModelViewSet):
         operation_description="Filtra instructores por estado activo o inactivo.",
         manual_parameters=[
             openapi.Parameter(
-                'is_active',  # Nombre del parámetro
-                openapi.IN_QUERY,  # Tipo: Query parameter
+                'is_active',  
+                openapi.IN_QUERY,  
                 description="Filtra por estado: 'true' para activos, 'false' para inactivos",
-                type=openapi.TYPE_BOOLEAN,  # Tipo de dato
+                type=openapi.TYPE_BOOLEAN,  
             )
         ],
         responses={
@@ -309,10 +306,10 @@ class InstructorViewSet(viewsets.ModelViewSet):
         operation_description="Busca instructores asociados a una empresa por su ID.",
         manual_parameters=[
             openapi.Parameter(
-                'empresa_id',  # Nombre del parámetro
-                openapi.IN_QUERY,  # Tipo: Query parameter
+                'empresa_id',  
+                openapi.IN_QUERY,
                 description="ID de la empresa para filtrar instructores",
-                type=openapi.TYPE_INTEGER,  # Tipo de dato
+                type=openapi.TYPE_INTEGER,
             )
         ],
         responses={
@@ -333,7 +330,6 @@ class InstructorViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            # Filtrar instructores por empresa
             queryset = self.queryset.filter(empresa__id=empresa_id)
             serializer = self.get_serializer(queryset, many=True)
             return Response(serializer.data, status=status.HTTP_200_OK)
@@ -411,17 +407,15 @@ class ModificarInstructorAPIView(APIView):
     )
     def post(self, request, *args, **kwargs):
         try:
-            # Obtener datos de la solicitud
+            
             instructor_anterior_id = request.data.get('instructor_anterior_id')
             nombre = request.data.get('nombre')
             apellido = request.data.get('apellido')
             email = request.data.get('email')
 			
 
-            # Obtener el instructor anterior
             instructor_anterior = Instructor.objects.get(id=instructor_anterior_id)
 
-            # Crear el nuevo instructor
             nuevo_instructor = Instructor.objects.create(
                 first_name=nombre,
                 last_name=apellido,
@@ -434,21 +428,20 @@ class ModificarInstructorAPIView(APIView):
                 debeCambiarContraseña=True
             )
 
-            # Generar una contraseña temporal para el nuevo instructor
+            
             temp_password = nuevo_instructor.generar_contraseña_temporal()
 
-            # Reasignar contratos del instructor anterior al nuevo instructor
+            
             contratos = Contrato.objects.filter(instructor=instructor_anterior)
             contratos.update(instructor=nuevo_instructor)
 
-            # Agrupar contratos por `codigoOrganizacion`
+           
             contratos_por_codigo = {}
             for contrato in contratos:
                 if contrato.codigoOrganizacion not in contratos_por_codigo:
                     contratos_por_codigo[contrato.codigoOrganizacion] = []
                 contratos_por_codigo[contrato.codigoOrganizacion].append(contrato)
-
-            # Construir el cuerpo del correo
+            
             cursos_info = ""
             for codigo, contratos in contratos_por_codigo.items():
                 cursos_info += f"\nCódigo de organización: {codigo}\n"
@@ -457,8 +450,7 @@ class ModificarInstructorAPIView(APIView):
                     for contrato in contratos
                 ])
                 cursos_info += "\n"
-
-            # Enviar correo al nuevo instructor con toda la información
+            
             email_service = EmailService(
                 to_email=nuevo_instructor.email,
                 subject='Asignación de contratos',
@@ -481,7 +473,7 @@ class ModificarInstructorAPIView(APIView):
             )
             email_service.send_email()
 
-            # Eliminar el instructor anterior
+            
             instructor_anterior.delete()
 
             return Response(
@@ -513,10 +505,10 @@ class EstudianteViewSet(viewsets.ModelViewSet):
         operation_description="Filtra estudiantes por código de organización.",
         manual_parameters=[
             openapi.Parameter(
-                'codigoOrganizacion',  # Nombre del parámetro
-                openapi.IN_QUERY,  # Tipo: Query parameter
+                'codigoOrganizacion', 
+                openapi.IN_QUERY,  
                 description="Código de organización para filtrar estudiantes",
-                type=openapi.TYPE_STRING,  # Tipo de dato
+                type=openapi.TYPE_STRING,  
             )
         ],
         responses={
@@ -550,7 +542,7 @@ class RegistroEstudianteAPIView(APIView):
 
     @swagger_auto_schema(
         operation_description="Crear un estudiante y asignarlo automáticamente a los cursos de su instructor en base al codigoOrganizacion. Si el correo ya existe y es un estudiante, se actualiza el codigoOrganizacion.",
-        request_body=EstudianteSerializer,  # Usamos el serializer para validar los datos
+        request_body=EstudianteSerializer, 
         responses={
             201: openapi.Response(
                 'Estudiante creado o actualizado con éxito',
@@ -582,7 +574,7 @@ class RegistroEstudianteAPIView(APIView):
         }
     )
     def post(self, request, *args, **kwargs):
-        # Validar los datos de entrada con el serializer
+
         serializer = EstudianteSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -591,11 +583,10 @@ class RegistroEstudianteAPIView(APIView):
             email = serializer.validated_data['email']
             codigo_organizacion = serializer.validated_data['codigoOrganizacion']
 
-            # Verificar si el correo ya existe y pertenece a un estudiante
             try:
                 estudiante = Estudiante.objects.get(email=email)
                 if estudiante.rol == 'estudiante':
-                    # Actualizar el codigoOrganizacion
+                    
                     estudiante.codigoOrganizacion = codigo_organizacion
                     estudiante.save()
                     return Response(
@@ -608,7 +599,7 @@ class RegistroEstudianteAPIView(APIView):
                         status=status.HTTP_400_BAD_REQUEST
                     )
             except Estudiante.DoesNotExist:
-                # Crear un nuevo estudiante si no existe
+               
                 estudiante = Estudiante.crear_estudiante_con_cursos(
                     email=email,
                     password=serializer.validated_data['password'],
@@ -622,10 +613,10 @@ class RegistroEstudianteAPIView(APIView):
                 )
 
         except ValidationError as e:
-            # Manejo de errores específicos de validación
+            
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            # Registrar errores inesperados en el logger
+
             logger.error(f"Error inesperado al registrar estudiante: {str(e)}")
             return Response(
                 {"error": "Ocurrió un error inesperado. Por favor, intente más tarde."},
@@ -664,12 +655,11 @@ class LoginView(APIView):
             if user.is_active:
                 hoy = date.today()
                 
-                # Validar contratos vigentes
+               
                 if user.rol == 'estudiante':
-                    # Forzar al modelo Estudiante
+                   
                     estudiante = Estudiante.objects.get(id=user.id)
-                    
-                    # Buscar contratos asociados al código de organización del estudiante
+                   
                     if not Contrato.objects.filter(
                         codigoOrganizacion=estudiante.codigoOrganizacion,
                         activo=True,
@@ -681,7 +671,7 @@ class LoginView(APIView):
                     serializer = EstudianteDetailSerializer(estudiante)
                 
                 elif user.rol == 'instructor':
-                    # Buscar contratos asociados al instructor
+                   
                     if not Contrato.objects.filter(
                         instructor=user,
                         activo=True,
@@ -690,25 +680,22 @@ class LoginView(APIView):
                     ).exists():
                         return Response({'error': 'No tiene contratos vigentes asociados.'}, status=status.HTTP_403_FORBIDDEN)
                     
-                    user = Instructor.objects.get(id=user.id)  # Forzar subclase Instructor
+                    user = Instructor.objects.get(id=user.id) 
                     serializer = InstructorDetailSerializer(user)
                 
                 elif user.rol == 'admin':
-                    user = Administrador.objects.get(id=user.id)  # Forzar subclase Administrador
+                    user = Administrador.objects.get(id=user.id)  
                     serializer = AdministradorDetailSerializer(user)
                 else:
                     return Response({'error': 'Rol no válido.'}, status=status.HTTP_400_BAD_REQUEST)
 
-
-                # Generar tokens
                 refresh = RefreshToken.for_user(user)
 
-                # Respuesta
+                
                 response_data = serializer.data
                 response_data['refresh'] = str(refresh)
                 response_data['access'] = str(refresh.access_token)
 
-                # Agregar `debeCambiarContraseña` solo si es un instructor
                 if user.rol == 'instructor':
                     response_data['debeCambiarContraseña'] = user.debeCambiarContraseña
 
@@ -740,26 +727,24 @@ class CambiarContraseñaAPIView(APIView):
         }
     )
     def post(self, request):
-        user = request.user  # Usuario autenticado obtenido del token JWT
+        user = request.user  
         old_password = request.data.get('old_password')
         new_password = request.data.get('new_password')
 
-        # Validar contraseñas ingresadas
         if not old_password or not new_password:
             return Response({'error': 'Ambos campos (old_password y new_password) son requeridos.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Verificar que la contraseña antigua sea correcta
+       
         if not user.check_password(old_password):
             return Response({'error': 'La contraseña antigua no es correcta.'}, status=status.HTTP_400_BAD_REQUEST)
 
         if user.check_password(new_password):
             return Response({'error': 'La nueva contraseña no puede ser igual a la contraseña actual.'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Cambiar la contraseña
+        
         user.set_password(new_password)
         user.save()
 
-        # Verificar si es un instructor para actualizar `debeCambiarContraseña`
         if user.rol == 'instructor':
             try:
                 instructor = Instructor.objects.get(id=user.id)
@@ -783,25 +768,23 @@ class CursoViewSet(viewsets.ModelViewSet):
         Personaliza el comportamiento al actualizar un curso.
         Si el campo `simulacion` cambia, actualiza los registros de progreso relacionados.
         """
-        # Guarda la instancia original antes de la actualización
+       
         curso_anterior = self.get_object()
 
-        # Realiza la actualización
+       
         instance = serializer.save()
 
-        # Si `simulacion` cambió de False a True
         if not curso_anterior.simulacion and instance.simulacion:
-            # Actualiza los registros de progreso relacionados
             Progreso.objects.filter(
                 curso=instance,
-                fechaFinCurso__isnull=True,  # No tienen fecha de finalización
-                porcentajeCompletado__lt=100,  # No están al 100%
-                simulacionCompletada__isnull=True  # No tienen simulación completada
+                fechaFinCurso__isnull=True,  
+                porcentajeCompletado__lt=100,  
+                simulacionCompletada__isnull=True  
             ).update(simulacionCompletada=False)
 
-        # Si `simulacion` cambió de True a False
+        
         elif curso_anterior.simulacion and not instance.simulacion:
-            # Establece el campo simulacionCompletada como NULL para los registros de progreso relacionados
+           
             Progreso.objects.filter(
                 curso=instance
             ).update(simulacionCompletada=None)
@@ -855,17 +838,17 @@ class CursoViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
  
-        # Filtrar progresos donde la simulación no está completada
+       
         progresos = Progreso.objects.filter(
             estudiante_id=estudiante_id,
             simulacionCompletada=False,
-            curso__simulacion=True  # Solo cursos con simulación habilitada
+            curso__simulacion=True  
         ).select_related('curso')
  
-        # Obtener los cursos únicos
+        
         cursos = {progreso.curso for progreso in progresos}
  
-        # Serializar los cursos
+       
         serializer = self.get_serializer(cursos, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -922,7 +905,7 @@ class ModulosPorSubcursoAPIView(APIView):
             return Response({"error": "Subcurso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         modulos = Modulo.objects.filter(subcurso=subcurso)
-        # Pasa el request al contexto del serializer
+        
         serializer = ModuloSerializer(modulos, many=True, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -931,18 +914,18 @@ class ModulosPorSubcursoAPIView(APIView):
 
 
 class DescargarArchivoModuloAPIView(APIView):
-    permission_classes = [IsAuthenticated]  # Cambia a [AllowAny] si no requiere autenticación
+    permission_classes = [IsAuthenticated]  
 
     def get(self, request, pk, *args, **kwargs):
         try:
-            # Obtener el módulo por su ID
+            
             modulo = Modulo.objects.get(pk=pk)
 
-            # Verificar si el módulo tiene un archivo asociado
+           
             if not modulo.archivo:
                 return Response({"error": "Este módulo no tiene un archivo asociado."}, status=status.HTTP_404_NOT_FOUND)
 
-            # Retornar el archivo como respuesta
+           
             archivo = modulo.archivo.path
             response = FileResponse(open(archivo, 'rb'), content_type='application/octet-stream')
             response['Content-Disposition'] = f'inline; filename="{modulo.archivo.name}"'
@@ -972,7 +955,7 @@ class ContratoAPIView(APIView):
         instructor_id = request.query_params.get('instructor')
         curso_id = request.query_params.get('curso')
 
-        # Filtrar por los parámetros proporcionados
+        
         if instructor_id and curso_id:
             relaciones = Contrato.objects.filter(instructor_id=instructor_id, curso_id=curso_id)
         elif instructor_id:
@@ -1017,33 +1000,32 @@ class ContratoAPIView(APIView):
     def post(self, request):
         instructor_id = request.data.get('instructor')
         curso_id = request.data.get('curso')
-        codigo_organizacion = request.data.get('codigoOrganizacion')  # Parámetro opcional
+        codigo_organizacion = request.data.get('codigoOrganizacion') 
 
-        # Validar datos obligatorios
         if not instructor_id or not curso_id:
             return Response({"error": "Los campos 'instructor' y 'curso' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
-                # Verificar si se proporcionó un `codigoOrganizacion`
+                
                 if not codigo_organizacion:
-                    # Si no se proporciona, generar un nuevo código basado en el instructor y su empresa
+                    
                     instructor = get_object_or_404(Instructor, id=instructor_id)
                     prefix = instructor.empresa.nombre[:3].upper()
                     suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
                     codigo_organizacion = f"{prefix}-{suffix}"
 
-                # Crear la relación entre instructor y curso
+                
                 relacion = Contrato.objects.create(
                     instructor_id=instructor_id,
                     curso_id=curso_id,
                     codigoOrganizacion=codigo_organizacion
                 )
 
-                # Obtener los estudiantes asociados al `codigoOrganizacion`
+                
                 estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-                # Crear los registros necesarios para los estudiantes
+                
                 progreso_records = []
                 estudiante_prueba_records = []
                 estudiante_subcurso_records = []
@@ -1106,7 +1088,7 @@ class ContratoAPIView(APIView):
         instructor_id = request.data.get('instructor')
         curso_id = request.data.get('curso')
 
-        # Validar datos
+        
         if not codigo_organizacion or not instructor_id or not curso_id:
             return Response(
                 {"error": "Los campos 'codigoOrganizacion', 'instructor', y 'curso' son requeridos."},
@@ -1115,7 +1097,7 @@ class ContratoAPIView(APIView):
 
         try:
             with transaction.atomic():
-                # Buscar la relación específica
+                
                 relacion = Contrato.objects.get(
                     codigoOrganizacion=codigo_organizacion,
                     instructor_id=instructor_id,
@@ -1123,10 +1105,10 @@ class ContratoAPIView(APIView):
                 )
 																		
 
-                # Obtener los estudiantes relacionados con el código de organización
+                
                 estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
-                # Eliminar registros asociados
+               
                 Progreso.objects.filter(estudiante__in=estudiantes, curso_id=curso_id).delete()
                 pruebas = Prueba.objects.filter(curso_id=curso_id)
                 EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
@@ -1135,7 +1117,7 @@ class ContratoAPIView(APIView):
                 modulos = Modulo.objects.filter(subcurso__in=subcursos)
                 EstudianteModulo.objects.filter(estudiante__in=estudiantes, modulo__in=modulos).delete()
 
-                # Eliminar la relación
+               
                 relacion.delete()
 
             return Response({"message": "Relación eliminada exitosamente."}, status=status.HTTP_200_OK)
@@ -1171,14 +1153,13 @@ class EstudiantesPorCodigoOrganizacionAPIView(APIView):
     def get(self, request):
         codigo_organizacion = request.query_params.get('codigoOrganizacion')
  
-        # Validar que el parámetro sea proporcionado
+ 
         if not codigo_organizacion:
             return Response(
                 {"error": "El parámetro 'codigoOrganizacion' es requerido."},
                 status=status.HTTP_400_BAD_REQUEST
             )
- 
-        # Buscar estudiantes por código de organización
+
         estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
  
         if estudiantes.exists():
@@ -1216,10 +1197,10 @@ class ProgresoViewSet(viewsets.ModelViewSet):
         """
         Filtra los registros de progreso por `estudiante_id` si se proporciona como parámetro.
         """
-        estudiante_id = self.request.query_params.get('estudiante_id')  # Capturar el parámetro `estudiante_id`
+        estudiante_id = self.request.query_params.get('estudiante_id')  
         if estudiante_id:
             return Progreso.objects.filter(estudiante_id=estudiante_id)
-        return super().get_queryset()  # Devuelve todos los registros si no hay filtro
+        return super().get_queryset()  
    
     @swagger_auto_schema(
         operation_description="Actualiza el campo `simulacionCompletada` de un registro de progreso basado en `estudiante_id` y `curso_id`.",
@@ -1301,11 +1282,11 @@ class EmitirCertificadoAPIView(APIView):
         estudiante_id = request.data.get('estudiante_id')
         curso_id = request.data.get('curso_id')
 
-        # Validar los parámetros
+        
         if not estudiante_id or not curso_id:
             return Response({"error": "Los campos 'estudiante_id' y 'curso_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Obtener estudiante y curso
+       
         try:
             estudiante = Estudiante.objects.get(id=estudiante_id)
             curso = Curso.objects.get(id=curso_id)
@@ -1314,7 +1295,7 @@ class EmitirCertificadoAPIView(APIView):
         except Curso.DoesNotExist:
             return Response({"error": "Curso no encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Emitir el certificado
+        
         resultado = Certificado.emitir_certificado(estudiante, curso)
         if resultado == "El estudiante no ha completado el curso.":
             return Response({"error": resultado}, status=status.HTTP_400_BAD_REQUEST)
@@ -1351,19 +1332,17 @@ class PruebaViewSet(viewsets.ModelViewSet):
         Agregar preguntas a una prueba específica.
         """
         try:
-            prueba = self.get_object()  # Obtener la prueba por su ID
-            preguntas_data = request.data  # Datos enviados en la solicitud
+            prueba = self.get_object()  
+            preguntas_data = request.data  
 
-            # Verificar si los datos son una lista
             if not isinstance(preguntas_data, list):
                 return Response(
                     {"error": "El cuerpo de la solicitud debe ser una lista de preguntas."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Crear preguntas asociadas a la prueba
             for pregunta_data in preguntas_data:
-                pregunta_data['prueba'] = prueba.id  # Asignar la prueba a la pregunta
+                pregunta_data['prueba'] = prueba.id  
                 serializer = PreguntaSerializer(data=pregunta_data)
                 serializer.is_valid(raise_exception=True)
                 serializer.save()
@@ -1383,7 +1362,7 @@ class PreguntaViewSet(viewsets.ModelViewSet):
     filterset_fields = ['prueba']  #
 
     def create(self, request, *args, **kwargs):
-        if isinstance(request.data, list):  # Verificar si el cuerpo es una lista
+        if isinstance(request.data, list): 
             serializer = self.get_serializer(data=request.data, many=True)
             serializer.is_valid(raise_exception=True)
             self.perform_create(serializer)
@@ -1408,7 +1387,6 @@ def completar_modulo(request, modulo_id):
     modulo.completado = True
     modulo.save()
 
-    # Actualizar progreso del subcurso
     modulo.subcurso.actualizar_progreso()
 
     return Response({'message': 'Módulo completado y progreso actualizado'}, status=status.HTTP_200_OK)
@@ -1454,18 +1432,16 @@ class CertificadoAPIView(APIView):
         }
     )
     def get(self, request):
-        # Obtener los parámetros de la solicitud
+
         curso_id = request.query_params.get('curso_id')
         estudiante_id = request.query_params.get('estudiante_id')
 
-        # Validar que se pasen los parámetros requeridos
         if not curso_id or not estudiante_id:
             return Response(
                 {"error": "Se requieren los parámetros 'curso_id' y 'estudiante_id'."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Buscar el certificado
         try:
             certificado = Certificado.objects.get(curso_id=curso_id, estudiante_id=estudiante_id)
         except Certificado.DoesNotExist:
@@ -1474,14 +1450,14 @@ class CertificadoAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Verificar si el certificado tiene un archivo PDF asociado
+       
         if not certificado.archivoPdf:
             return Response(
                 {"error": "El certificado no tiene un archivo PDF asociado."},
                 status=status.HTTP_404_NOT_FOUND
             )
 
-        # Leer el archivo PDF y enviarlo como respuesta
+       
         pdf_path = certificado.archivoPdf.path
         try:
             with open(pdf_path, 'rb') as pdf_file:
@@ -1494,7 +1470,7 @@ class CertificadoAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
         
-# views.py
+
 class ActualizarEstudiantePruebaAPIView(APIView):
     """
     API para actualizar los campos de un registro de EstudiantePrueba.
@@ -1533,21 +1509,17 @@ class ActualizarEstudiantePruebaAPIView(APIView):
         estudiante_id = request.data.get('estudiante_id')
         prueba_id = request.data.get('prueba_id')
  
-        # Validar los parámetros
         if not estudiante_id or not prueba_id:
             return Response({"error": "Los campos 'estudiante_id' y 'prueba_id' son requeridos."}, status=status.HTTP_400_BAD_REQUEST)
  
-        # Obtener el registro
         estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
  
-        # Incrementar intento y actualizar fechaPrueba
         estudiante_prueba.intento += 1
         estudiante_prueba.fechaPrueba = date.today()
  
-        # Serializar y validar los datos restantes
         serializer = EstudiantePruebaSerializer(estudiante_prueba, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()  # Actualizar el registro con los nuevos datos
+            serializer.save()  
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1556,7 +1528,7 @@ class PruebasEstudianteAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        estudiante_id = request.user.id  # Asume que el usuario autenticado es un estudiante
+        estudiante_id = request.user.id  
         pruebas = EstudiantePrueba.objects.filter(estudiante_id=estudiante_id).select_related('prueba')
 
         data = [
@@ -1629,21 +1601,19 @@ class ResponderPruebaAPIView(APIView):
         estudiante_id = request.user.id
         estudiante_prueba = get_object_or_404(EstudiantePrueba, estudiante_id=estudiante_id, prueba_id=prueba_id)
 
-        # Validar respuestas
         preguntas = Pregunta.objects.filter(prueba_id=prueba_id)
         calificacion_total = 0
-        puntos_por_pregunta = preguntas.first().puntajePregunta  # Supone que todas las preguntas tienen el mismo puntaje
-
+        puntos_por_pregunta = preguntas.first().puntajePregunta 
         for pregunta in preguntas:
             respuesta_correcta = pregunta.respuestaCorrecta
-            respuesta_del_estudiante = respuestas.get(str(pregunta.id))  # Clave debe ser un string
+            respuesta_del_estudiante = respuestas.get(str(pregunta.id))  
 
             if respuesta_del_estudiante and respuesta_del_estudiante.lower() == respuesta_correcta.lower():
                 calificacion_total += puntos_por_pregunta
 
-        # Guardar calificación
+       
         estudiante_prueba.calificacion = calificacion_total
-        estudiante_prueba.estaAprobado = calificacion_total >= 60  # Nota mínima para aprobar
+        estudiante_prueba.estaAprobado = calificacion_total >= 60 
         estudiante_prueba.save()
 
         return Response({
@@ -1681,7 +1651,7 @@ class PreguntasPorPruebaEstudianteAPIView(APIView):
         if not prueba_id:
             return Response({"error": "El parámetro 'prueba_id' es obligatorio."}, status=400)
 
-        # Verificar si la prueba está asignada al estudiante
+        
         estudiante_prueba = EstudiantePrueba.objects.filter(
             prueba_id=prueba_id, estudiante_id=estudiante_id
         ).first()
@@ -1692,7 +1662,7 @@ class PreguntasPorPruebaEstudianteAPIView(APIView):
                 status=404
             )
 
-        # Obtener las preguntas asociadas a la prueba
+        
         preguntas = Pregunta.objects.filter(prueba_id=prueba_id)
         serializer = PreguntaSerializer(preguntas, many=True)
 
@@ -1781,11 +1751,11 @@ class CrearContratosAPIView(APIView):
                     if serializer.is_valid():
                         contrato = serializer.save()
  
-                        # Si ya hay un código generado, forzarlo en los contratos subsiguientes
+                        
                         if codigo_organizacion:
                             contrato.set_force_codigo(codigo_organizacion)
                             contrato.save()
-                        else:  # Generar el código en el primer contrato
+                        else:  
                             codigo_organizacion = contrato.codigoOrganizacion
                             instructor = contrato.instructor
  
@@ -1793,7 +1763,6 @@ class CrearContratosAPIView(APIView):
                     else:
                         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
  
-                # Enviar correo al instructor si se crearon contratos
                 if contratos_creados and instructor:
                     cursos_info = "\n".join([
                         f"- {contrato.curso.titulo} (Inicio: {contrato.fechaInicioCapacitacion}, Fin: {contrato.fechaFinCapacitacion})"
@@ -1889,8 +1858,6 @@ class ActualizarContratosAPIView(APIView):
         if not codigo_organizacion:
             return Response({"error": "El campo 'codigoOrganizacion' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 																	  
-						  
-			 
 
         try:
             with transaction.atomic():
@@ -1902,7 +1869,7 @@ class ActualizarContratosAPIView(APIView):
                         status=status.HTTP_404_NOT_FOUND
                     )
 
-                # Obtener los cursos asociados y los estudiantes
+                
                 cursos_ids = contratos.values_list('curso_id', flat=True)
                 estudiantes = Estudiante.objects.filter(codigoOrganizacion=codigo_organizacion)
 
@@ -1913,7 +1880,7 @@ class ActualizarContratosAPIView(APIView):
                         contrato.fechaFinCapacitacion = fecha_fin
                     if activo is not None:
                         contrato.activo = activo
-                        if not activo:  # Si el contrato se inactiva, eliminar registros relacionados
+                        if not activo:  
                             Progreso.objects.filter(estudiante__in=estudiantes, curso_id__in=cursos_ids).delete()
                             pruebas = Prueba.objects.filter(curso_id__in=cursos_ids)
                             EstudiantePrueba.objects.filter(estudiante__in=estudiantes, prueba__in=pruebas).delete()
@@ -1967,17 +1934,12 @@ class ContratosPorInstructorAPIView(APIView):
             return Response({"error": "El campo 'instructor_id' es requerido."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Obtener los contratos asociados al instructor
+           
             contratos = Contrato.objects.filter(instructor_id=instructor_id)
 				 
-
-            # Si no hay contratos, devolver un resultado vacío
             if not contratos.exists():
                 return Response({}, status=status.HTTP_200_OK)
 						  
-			 
-
-            # Agrupar los contratos por `codigoOrganizacion`
             agrupados_por_codigo = {}
             for contrato in contratos:
                 codigo = contrato.codigoOrganizacion
@@ -2010,42 +1972,40 @@ class GeneralMetricsAPIView(APIView):
         curso_id = request.query_params.get('curso_id')
         fecha_actual = now().date()
  
-        # 1. Construir filtros PARA Contrato (no para Curso directamente):
+        
         contrato_filter = Q()
         if empresa_id:
             contrato_filter &= Q(instructor__empresa_id=empresa_id)
         if curso_id:
             contrato_filter &= Q(curso__id=curso_id)
  
-        # 2. Filtrar Contratos:
+       
         contratos_filtrados = Contrato.objects.filter(contrato_filter).distinct()
  
-        # 3. A partir de esos contratos, obtener:
-        #    - IDs de los cursos
-        #    - Códigos de organización
+       
         cursos_filtrados_ids = contratos_filtrados.values_list('curso_id', flat=True)
         codigos_org_filtrados = contratos_filtrados.values_list('codigoOrganizacion', flat=True)
  
-        # 4. Total de estudiantes (solo aquellos cuyo código esté en contratos_filtrados)
+        
         total_estudiantes = Estudiante.objects.filter(codigoOrganizacion__in=codigos_org_filtrados).distinct().count()
  
-        # 5. Total instructores (si filtras por empresa, si no, todos)
+       
         if empresa_id:
             total_instructores = Instructor.objects.filter(empresa_id=empresa_id).count()
         else:
             total_instructores = Instructor.objects.count()
  
-        # 6. Total empresas y cursos (sin filtros, según tu lógica)
+       
         total_empresas = Empresa.objects.count()
         total_cursos = Curso.objects.count()
  
-        # 7. Total certificados (solo de cursos filtrados o estudiantes filtrados)
+        
         total_certificados = Certificado.objects.filter(
             Q(curso_id__in=cursos_filtrados_ids) |
             Q(estudiante__codigoOrganizacion__in=codigos_org_filtrados)
         ).count()
  
-        # 8. Total pruebas y aprobadas
+       
         total_pruebas = EstudiantePrueba.objects.filter(
             prueba__curso_id__in=cursos_filtrados_ids
         ).count()
@@ -2055,8 +2015,7 @@ class GeneralMetricsAPIView(APIView):
             prueba__curso_id__in=cursos_filtrados_ids
         ).count()
  
-        # 9. Instructores activos
-        #    Si quieres filtrar también por curso, lo incluyes en la Query
+       
         instructores_activos_qs = Instructor.objects.filter(
             cursos_asignados__fechaInicioCapacitacion__lte=fecha_actual,
             cursos_asignados__fechaFinCapacitacion__gte=fecha_actual
@@ -2069,7 +2028,7 @@ class GeneralMetricsAPIView(APIView):
             )
         instructores_activos = instructores_activos_qs.distinct().count()
  
-        # 10. Estudiantes activos (contratos vigentes que cumplan con empresa_id / curso_id)
+       
         contratos_activos_filtrados = contratos_filtrados.filter(
             fechaInicioCapacitacion__lte=fecha_actual,
             fechaFinCapacitacion__gte=fecha_actual
@@ -2079,7 +2038,7 @@ class GeneralMetricsAPIView(APIView):
             codigoOrganizacion__in=codigos_activos
         ).distinct().count()
  
-        # 11. Tasas
+        
         tasa_certificacion = (
             (total_certificados / total_estudiantes) * 100 if total_estudiantes > 0 else 0
         )
@@ -2108,21 +2067,19 @@ class InstructorGeneralMetricsAPIView(APIView):
     Recibe como parámetro: ?instructor_id=123
     """
     def get(self, request):
-        # 1. Obtener instructor_id desde query params
+        
         instructor_id = request.query_params.get('instructor_id', None)
         if not instructor_id:
             return Response({"error": "Debes proporcionar ?instructor_id="}, status=400)
        
-        # 2. Traer el objeto Instructor o 404 si no existe
+        
         instructor = get_object_or_404(Instructor, id=instructor_id)
        
-        # 3. Obtener la empresa del instructor
+        
         empresa = instructor.empresa
         fecha_actual = now().date()
        
-        # ------------------------------------------------------------
-        # MÉTRICAS DEL INSTRUCTOR
-        # ------------------------------------------------------------
+        
         contratos_instructor = Contrato.objects.filter(instructor=instructor).distinct()
        
         cursos_instructor_ids = contratos_instructor.values_list('curso_id', flat=True)
@@ -2146,7 +2103,7 @@ class InstructorGeneralMetricsAPIView(APIView):
             prueba__curso_id__in=cursos_instructor_ids
         ).count()
        
-        # Contratos activos del instructor
+       
         contratos_activos_instructor = contratos_instructor.filter(
             fechaInicioCapacitacion__lte=fecha_actual,
             fechaFinCapacitacion__gte=fecha_actual
@@ -2156,7 +2113,7 @@ class InstructorGeneralMetricsAPIView(APIView):
             codigoOrganizacion__in=codigos_activos_instructor
         ).distinct().count()
        
-        # Tasas
+        
         tasa_certificacion_instructor = (
             (total_certificados_instructor / total_estudiantes_instructor) * 100
             if total_estudiantes_instructor > 0 else 0
@@ -2166,9 +2123,7 @@ class InstructorGeneralMetricsAPIView(APIView):
             if total_pruebas_instructor > 0 else 0
         )
        
-        # ------------------------------------------------------------
-        # MÉTRICAS GENERALES DE LA EMPRESA
-        # ------------------------------------------------------------
+        
         contratos_empresa = Contrato.objects.filter(instructor__empresa=empresa).distinct()
        
         cursos_empresa_ids = contratos_empresa.values_list('curso_id', flat=True)
@@ -2212,12 +2167,9 @@ class InstructorGeneralMetricsAPIView(APIView):
             if total_pruebas_empresa > 0 else 0
         )
        
-        # (opcional) total de cursos en la empresa
+       
         total_cursos_empresa = Curso.objects.filter(id__in=cursos_empresa_ids).count()
  
-        # ------------------------------------------------------------
-        # ESTRUCTURA DE RESPUESTA
-        # ------------------------------------------------------------
         data = {
             "instructor_metrics": {
                 "instructor_id": instructor_id,
@@ -2255,7 +2207,7 @@ class InstructorCursosTasaFinalizacionAPIView(APIView):
     Recibe como parámetro: ?instructor_id=123
     """
     def get(self, request):
-        # 1. instructor_id por query param
+        
         instructor_id = request.query_params.get('instructor_id', None)
         if not instructor_id:
             return Response({"error": "Debes proporcionar ?instructor_id="}, status=400)
@@ -2263,28 +2215,23 @@ class InstructorCursosTasaFinalizacionAPIView(APIView):
         instructor = get_object_or_404(Instructor, id=instructor_id)
         empresa = instructor.empresa
        
-        # -----------------------------------------------------------------------
-        # 2. Cursos del instructor
-        # -----------------------------------------------------------------------
+        
         cursos_instructor_qs = Curso.objects.filter(
             instructores_asignados__instructor=instructor
         ).distinct()
        
-        # Anotamos la tasa_finalizacion como el promedio de 'progresos__porcentajeCompletado'
+        
         cursos_instructor_qs = cursos_instructor_qs.annotate(
             tasa_finalizacion=Avg('progresos__porcentajeCompletado')
         )
        
-        # Curso con mayor y menor tasa de finalización (instructor)
+       
         curso_instructor_mayor = None
         curso_instructor_menor = None
         if cursos_instructor_qs.exists():
             curso_instructor_mayor = cursos_instructor_qs.order_by('-tasa_finalizacion').first()
             curso_instructor_menor = cursos_instructor_qs.order_by('tasa_finalizacion').first()
-       
-        # -----------------------------------------------------------------------
-        # 3. Cursos de la empresa
-        # -----------------------------------------------------------------------
+
         cursos_empresa_qs = Curso.objects.filter(
             instructores_asignados__instructor__empresa=empresa
         ).distinct().annotate(
@@ -2297,9 +2244,7 @@ class InstructorCursosTasaFinalizacionAPIView(APIView):
             curso_empresa_mayor = cursos_empresa_qs.order_by('-tasa_finalizacion').first()
             curso_empresa_menor = cursos_empresa_qs.order_by('tasa_finalizacion').first()
        
-        # -----------------------------------------------------------------------
-        # 4. Función para serializar la info de curso
-        # -----------------------------------------------------------------------
+
         def info_curso(curso):
             if not curso or curso.tasa_finalizacion is None:
                 return None
@@ -2330,7 +2275,7 @@ class FilteredMetricsAPIView(APIView):
         empresa_id = request.query_params.get('empresa_id', None)
         curso_id = request.query_params.get('curso_id', None)
  
-        # Filtros dinámicos
+   
         empresa_filter = Q()
         curso_filter = Q()
  
@@ -2340,15 +2285,15 @@ class FilteredMetricsAPIView(APIView):
         if curso_id:
             curso_filter &= Q(id=curso_id)
  
-        # Filtrar estudiantes y certificados
+        
         total_estudiantes = Estudiante.objects.filter(empresa_filter).count()
         total_certificados = Certificado.objects.filter(curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
  
-        # Filtrar pruebas
+        
         total_pruebas = EstudiantePrueba.objects.filter(prueba__curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
         pruebas_aprobadas = EstudiantePrueba.objects.filter(estaAprobado=True, prueba__curso__in=Curso.objects.filter(empresa_filter & curso_filter)).count()
  
-        # Calcular tasas
+      
         tasa_certificacion = (
             (total_certificados / total_estudiantes) * 100 if total_estudiantes > 0 else 0
         )
@@ -2366,10 +2311,7 @@ class FilteredMetricsAPIView(APIView):
         }
         return Response(data)
  
- 
- 
- 
-#metricas
+
  
 class EmpresasTotalesAPIView(APIView):
  
@@ -2392,24 +2334,23 @@ class UsuariosTotalesAPIView(APIView):
         empresa_id = request.query_params.get('empresa_id')
  
         if empresa_id:
-            # Validar que la empresa existe
+           
             empresa = get_object_or_404(Empresa, id=empresa_id)
  
-            # Obtener instructores asociados a la empresa
+           
             instructores = Instructor.objects.filter(empresa_id=empresa_id)
             total_instructores = instructores.count()
  
-            # Obtener los códigos de organización a través de contratos
+            
             codigos_organizacion = Contrato.objects.filter(
                 instructor__empresa_id=empresa_id
             ).values_list('codigoOrganizacion', flat=True).distinct()
  
-            # Contar estudiantes asociados a esos códigos
             total_estudiantes = Estudiante.objects.filter(
                 codigoOrganizacion__in=codigos_organizacion
             ).count()
         else:
-            # Contar instructores y estudiantes a nivel global
+            
             total_instructores = Instructor.objects.count()
             total_estudiantes = Estudiante.objects.count()
  
@@ -2446,26 +2387,26 @@ class ProgresoPromedioAPIView(APIView):
  
         progresos = Progreso.objects.all()
  
-        # Filtrar por empresa
+      
         if empresa_id:
-            # Validar que la empresa existe
+           
             empresa = get_object_or_404(Empresa, id=empresa_id)
  
-            # Obtener códigos de organización asociados a los contratos de la empresa
+           
             codigos_organizacion = Contrato.objects.filter(
                 instructor__empresa_id=empresa_id
             ).values_list('codigoOrganizacion', flat=True).distinct()
  
-            # Filtrar progresos por estudiantes asociados a los códigos
+           
             progresos = progresos.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
  
-        # Filtrar por curso
+       
         if curso_id:
-            # Validar que el curso existe
+           
             get_object_or_404(Curso, id=curso_id)
             progresos = progresos.filter(curso_id=curso_id)
  
-        # Calcular progreso promedio
+        
         progreso_promedio = progresos.aggregate(promedio=models.Avg('porcentajeCompletado'))['promedio'] or 0
  
         return Response({"progreso_promedio": round(progreso_promedio, 2)}, status=status.HTTP_200_OK)
@@ -2478,36 +2419,32 @@ class SimulacionesCompletadasAPIView(APIView):
         empresa_id = request.query_params.get('empresa_id')
         curso_id = request.query_params.get('curso_id')
  
-        # Filtrar progresos relacionados con cursos que tienen simulación
+       
         progresos = Progreso.objects.filter(curso__simulacion=True)
  
-        # Filtrar por empresa (opcional)
+       
         if empresa_id:
-            # Validar la existencia de la empresa
+            
             empresa = get_object_or_404(Empresa, id=empresa_id)
  
-            # Obtener los códigos de organización asociados a los contratos de la empresa
             codigos_organizacion = Contrato.objects.filter(
                 instructor__empresa_id=empresa_id
             ).values_list('codigoOrganizacion', flat=True).distinct()
  
-            # Filtrar progresos basados en los códigos de organización
             progresos = progresos.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
  
-        # Filtrar por curso (opcional)
         if curso_id:
-            # Validar la existencia del curso
+
             get_object_or_404(Curso, id=curso_id)
  
-            # Filtrar progresos relacionados con el curso
             progresos = progresos.filter(curso_id=curso_id)
  
-        # Calcular métricas
+
         total_simulaciones = progresos.count()
         total_simulaciones_completadas = progresos.filter(simulacionCompletada=True).count()
         porcentaje_completadas = (total_simulaciones_completadas / total_simulaciones * 100) if total_simulaciones > 0 else 0
  
-        # Respuesta
+
         return Response({
             "total_simulaciones_completadas": total_simulaciones_completadas,
             "total_simulaciones": total_simulaciones,
@@ -2533,7 +2470,7 @@ class TasaCertificacionAPIView(APIView):
             curso = get_object_or_404(Curso, id=curso_id)
             certificados = certificados.filter(curso_id=curso_id)
  
-        # Obtener estudiantes únicos con al menos un certificado
+       
         estudiantes_certificados = certificados.values_list('estudiante_id', flat=True).distinct()
         total_estudiantes_certificados = estudiantes_certificados.count()
         total_estudiantes = Estudiante.objects.count()
@@ -2550,39 +2487,36 @@ class TasaAprobacionPruebasAPIView(APIView):
         empresa_id = request.query_params.get('empresa_id')
         curso_id = request.query_params.get('curso_id')
  
-        # Base queryset para pruebas aprobadas y total de pruebas
+ 
         pruebas_aprobadas = EstudiantePrueba.objects.filter(estaAprobado=True)
         total_pruebas = EstudiantePrueba.objects.all()
  
-        # Filtrar por empresa si se proporciona
         if empresa_id:
-            # Validar la existencia de la empresa
+         
             empresa = get_object_or_404(Empresa, id=empresa_id)
  
-            # Obtener códigos de organización desde los contratos relacionados
+            
             codigos_organizacion = Contrato.objects.filter(
                 instructor__empresa_id=empresa_id
             ).values_list('codigoOrganizacion', flat=True).distinct()
- 
-            # Aplicar filtro por códigos de organización
+
             pruebas_aprobadas = pruebas_aprobadas.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
             total_pruebas = total_pruebas.filter(estudiante__codigoOrganizacion__in=codigos_organizacion)
  
-        # Filtrar por curso si se proporciona
+
         if curso_id:
-            # Validar la existencia del curso
+
             get_object_or_404(Curso, id=curso_id)
  
-            # Aplicar filtro por curso
+
             pruebas_aprobadas = pruebas_aprobadas.filter(prueba__curso_id=curso_id)
             total_pruebas = total_pruebas.filter(prueba__curso_id=curso_id)
  
-        # Calcular métricas
+
         total_aprobados = pruebas_aprobadas.count()
         total_pruebas = total_pruebas.count()
         tasa_aprobacion = (total_aprobados / total_pruebas * 100) if total_pruebas > 0 else 0
- 
-        # Respuesta
+
         return Response({"tasa_aprobacion": round(tasa_aprobacion, 2)}, status=status.HTTP_200_OK)
  
    
@@ -2595,20 +2529,19 @@ class EstudiantesPorEmpresaAPIView(APIView):
         """
         API para obtener el número total de estudiantes asociados a cada empresa.
         """
-        # Obtener todas las empresas
         empresas = Empresa.objects.all()
         data = {}
  
         for empresa in empresas:
-            # Obtener los códigos de organización asociados a los contratos de los instructores de esta empresa
+            
             codigos_organizacion = Contrato.objects.filter(
                 instructor__empresa=empresa
             ).values_list('codigoOrganizacion', flat=True).distinct()
  
-            # Contar estudiantes asociados a esos códigos de organización
+            
             total_estudiantes = Estudiante.objects.filter(codigoOrganizacion__in=codigos_organizacion).count()
  
-            # Agregar datos al diccionario de respuesta
+          
             data[empresa.nombre] = total_estudiantes
  
         return Response(data, status=status.HTTP_200_OK)
@@ -2640,26 +2573,25 @@ class CursosTasaFinalizacionAPIView(APIView):
     def get(self, request):
         from django.db.models import Avg
  
-        # Obtener el parámetro de empresa (opcional)
+        
         empresa_id = request.query_params.get('empresa_id', None)
  
-        # Construir QuerySet base (solo cursos que tienen un promedio de progreso calculable)
+       
         cursos_qs = Curso.objects.annotate(
             tasa_finalizacion=Avg('progresos__porcentajeCompletado')
         ).filter(tasa_finalizacion__isnull=False)
  
-        # Si pasas ?empresa_id=XYZ, filtra los cursos relacionados a esa empresa
+       
         if empresa_id:
             cursos_qs = cursos_qs.filter(
-                # "instructores_asignados" hace referencia a Contrato;
-                # de ahí saltas a "instructor" y luego a "empresa_id"
+               
                 instructores_asignados__instructor__empresa_id=empresa_id
             )
  
-        # Ordenar de mayor a menor tasa de finalización
+       
         cursos_qs = cursos_qs.order_by('-tasa_finalizacion')
  
-        # Extraer el curso con mayor y menor finalización
+       
         mayor_finalizacion = cursos_qs.first() if cursos_qs.exists() else None
         menor_finalizacion = cursos_qs.last() if cursos_qs.exists() else None
  
@@ -2719,7 +2651,7 @@ class EstudianteModuloViewSet(viewsets.ModelViewSet):
         Actualiza el estado de completado para un registro EstudianteModulo.
         Requiere `estudiante_id` y `modulo_id`.
         """
-        # Validar parámetros requeridos
+        
         estudiante_id = request.data.get('estudiante_id')
         modulo_id = request.data.get('modulo_id')
         completado = request.data.get('completado', False)
@@ -2731,27 +2663,27 @@ class EstudianteModuloViewSet(viewsets.ModelViewSet):
             )
  
         try:
-            # Validar que los IDs sean enteros
+           
             estudiante_id = int(estudiante_id)
             modulo_id = int(modulo_id)
  
-            # Obtener el registro EstudianteModulo
+            
             estudiante_modulo = get_object_or_404(
                 EstudianteModulo, estudiante_id=estudiante_id, modulo_id=modulo_id
             )
  
-            # Validar que el campo completado sea un booleano
+            
             if not isinstance(completado, bool):
                 return Response(
                     {"error": "El campo 'completado' debe ser un valor booleano."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
  
-            # Actualizar el registro
+           
             estudiante_modulo.completado = completado
             estudiante_modulo.save()
  
-            # Serializar y devolver la respuesta
+            
             serializer = self.get_serializer(estudiante_modulo)
             return Response(serializer.data, status=status.HTTP_200_OK)
  

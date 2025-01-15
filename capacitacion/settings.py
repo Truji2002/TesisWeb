@@ -206,7 +206,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',  # Origen del frontend
-    "http://172.20.10.2:8000",
+    "http://172.20.10.4:8000",
 ]
 CORS_ALLOW_ALL_ORIGINS = True
 

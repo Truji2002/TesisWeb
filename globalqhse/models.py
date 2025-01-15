@@ -61,7 +61,6 @@ class Usuario(AbstractUser):
     REQUIRED_FIELDS = ['first_name', 'last_name','password']
     
 
-    # Cambia los related_name para evitar conflictos
     groups = models.ManyToManyField(
         'auth.Group',
         verbose_name='groups',
@@ -165,7 +164,7 @@ class Contrato(models.Model):
         models.UniqueConstraint(
             fields=['instructor', 'curso', 'activo'],
             name='unique_instructor_curso_activo',
-            condition=Q(activo=True)  # Solo aplica cuando `activo=True`
+            condition=Q(activo=True)  
         )
     ]
  
@@ -174,10 +173,10 @@ class Contrato(models.Model):
    
    
     def save(self, *args, **kwargs):
-            # Si `force_codigo` se estableció previamente, úsalo
+            
             if hasattr(self, '_force_codigo') and self._force_codigo:
                 self.codigoOrganizacion = self._force_codigo
-            elif not self.codigoOrganizacion:  # Generar un nuevo código solo si no hay uno existente
+            elif not self.codigoOrganizacion:  
                 prefix = self.instructor.empresa.nombre[:3].upper()
                 suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
                 self.codigoOrganizacion = f"{prefix}-{suffix}"
@@ -275,11 +274,11 @@ class Progreso(models.Model):
         Calcula el porcentaje completado del curso basado en el progreso de subcursos, módulos, simulaciones y pruebas.
 								   
         """
-        # 1. Obtener todos los subcursos asociados al curso
+        
         subcursos = Subcurso.objects.filter(curso=self.curso)
-        total_subcursos = subcursos.count() or 1  # Evitar división por cero
+        total_subcursos = subcursos.count() or 1  
 
-        # Calcular avance en subcursos (contenido completado)
+       
         avance_total_subcursos = 0
         for subcurso in subcursos:
             estudiante_subcurso = EstudianteSubcurso.objects.filter(
@@ -288,17 +287,17 @@ class Progreso(models.Model):
             if estudiante_subcurso:
                 avance_total_subcursos += estudiante_subcurso.porcentajeCompletado
 
-        # Promedio de avance en subcursos
+        
         porcentaje_contenido = avance_total_subcursos / total_subcursos
 
-        # 2. Obtener el estado de la simulación y la prueba
+        
         simulacion_completada = self.simulacionCompletada or False
         prueba = EstudiantePrueba.objects.filter(estudiante=self.estudiante, prueba__curso=self.curso).first()
         esta_aprobado = prueba.estaAprobado if prueba else False
 
-        # 3. Determinar la regla de cálculo según si el curso tiene simulación
+        
         if self.curso.simulacion:
-            # Peso: 50% contenido, 30% simulación, 20% prueba
+           
             peso_contenido = 0.5
             peso_simulacion = 0.3
             peso_prueba = 0.2
@@ -312,7 +311,7 @@ class Progreso(models.Model):
                 (porcentaje_prueba * peso_prueba)
             )
         else:
-            # Peso: 80% contenido, 20% prueba
+            
             peso_contenido = 0.8
             peso_prueba = 0.2
 
@@ -323,16 +322,16 @@ class Progreso(models.Model):
                 (porcentaje_prueba * peso_prueba)
             )
 
-        # 4. Redondear a 2 decimales y manejar caso de 100%
+        
         self.porcentajeCompletado = round(self.porcentajeCompletado, 2)
         if self.porcentajeCompletado >= 99:
             self.porcentajeCompletado = 100
 
-        # 5. Actualizar estado `completado` del curso
+        
         self.contenidoCompletado = porcentaje_contenido == 100
         self.completado = self.porcentajeCompletado == 100
 
-        # 6. Guardar cambios sin disparar señales
+       
         self._skip_post_save = True
         self.save()
         self._skip_post_save = False
@@ -351,7 +350,7 @@ class Estudiante(Usuario):
  
     def save(self, *args, **kwargs):
         self.rol = 'estudiante'
-        # Validar que el código de organización sea válido
+        
         if not Contrato.objects.filter(codigoOrganizacion=self.codigoOrganizacion).exists():
             raise ValidationError("El código de organización ingresado no corresponde a un instructor válido.")
         super().save(*args, **kwargs)
@@ -364,22 +363,22 @@ class Estudiante(Usuario):
         También crea registros en las tablas EstudianteSubcurso y EstudianteModulo.
         """
         try:
-            # Verificar que el código de organización es válido
+            
             contratos = Contrato.objects.filter(codigoOrganizacion=codigoOrganizacion)
             if not contratos.exists():
                 raise ValidationError("El código de organización ingresado no corresponde a ningún contrato válido.")
  
-            # Crear el estudiante
+            
             with transaction.atomic():
                 estudiante = cls.objects.create(
                     email=email,
                     codigoOrganizacion=codigoOrganizacion,
                     **kwargs
                 )
-                estudiante.set_password(password)  # Configurar contraseña segura
+                estudiante.set_password(password)  
                 estudiante.save()
  
-                # Inscribir al estudiante en los cursos de los contratos
+                
                 cursos_ids = contratos.values_list('curso_id', flat=True)
                 cursos = Curso.objects.filter(id__in=cursos_ids)
                 progreso_records = []
@@ -388,7 +387,7 @@ class Estudiante(Usuario):
                 estudiante_modulo_records = []
  
                 for curso in cursos:
-                    # Crear registros de progreso
+                    
                     progreso_records.append(
                         Progreso(
                             estudiante=estudiante,
@@ -399,28 +398,28 @@ class Estudiante(Usuario):
                         )
                     )
  
-                    # Buscar pruebas asociadas al curso y crear registros de EstudiantePrueba
+                    
                     pruebas = Prueba.objects.filter(curso=curso)
                     for prueba in pruebas:
                         estudiante_prueba_records.append(
                             EstudiantePrueba(estudiante=estudiante, prueba=prueba)
                         )
  
-                    # Crear registros en EstudianteSubcurso para los subcursos del curso
+                    
                     subcursos = Subcurso.objects.filter(curso=curso)
                     for subcurso in subcursos:
                         estudiante_subcurso_records.append(
                             EstudianteSubcurso(estudiante=estudiante, subcurso=subcurso, completado=False, porcentajeCompletado=0.0)
                         )
  
-                        # Crear registros en EstudianteModulo para los módulos del subcurso
+                        
                         modulos = Modulo.objects.filter(subcurso=subcurso)
                         for modulo in modulos:
                             estudiante_modulo_records.append(
                                 EstudianteModulo(estudiante=estudiante, modulo=modulo, completado=False)
                             )
  
-                # Guardar registros en la base de datos
+                
                 Progreso.objects.bulk_create(progreso_records)
                 EstudiantePrueba.objects.bulk_create(estudiante_prueba_records)
                 EstudianteSubcurso.objects.bulk_create(estudiante_subcurso_records)
@@ -460,7 +459,7 @@ class EstudiantePrueba(models.Model):
             self.estaAprobado = self.calificacion >= 60
             self.intento += 1
 
-            # Evitar recursión
+            
             self._skip_post_save = True
             self.save()
             self._skip_post_save = False
@@ -492,38 +491,38 @@ class Certificado(models.Model):
         Genera un certificado con diseño mejorado si el estudiante ha completado el curso.
         """
         try:
-            # Verificar si el estudiante ya completó el curso
+            
             progreso = Progreso.objects.filter(estudiante=estudiante, curso=curso, completado=True).first()
             if not progreso:
                 return "El estudiante no ha completado el curso."
 
-            # Verificar si ya existe un certificado para este estudiante y curso
+           
             if cls.objects.filter(estudiante=estudiante, curso=curso).exists():
                 return "El certificado ya ha sido emitido."
 
-            # Validar datos
+            
             if not estudiante.first_name or not estudiante.last_name:
                 return "Los datos del estudiante son incompletos."
             if not curso.titulo:
                 return "El título del curso no está disponible."
 
-            # Generar el archivo PDF del certificado
+            
             buffer = io.BytesIO()
             pdf = canvas.Canvas(buffer, pagesize=letter)
 
-            # Diseño básico del certificado
+           
             width, height = letter
 
-            # Fondo opcional
+            
             pdf.setFillColor(HexColor("#f7f7f7"))
             pdf.rect(0, 0, width, height, fill=1)
 
-            # Título
+            
             pdf.setFont("Helvetica-Bold", 24)
             pdf.setFillColor(HexColor("#333333"))
             pdf.drawCentredString(width / 2, height - 100, "Certificado de Finalización")
 
-            # Texto descriptivo
+            
             pdf.setFont("Helvetica", 14)
             pdf.drawCentredString(
                 width / 2,
@@ -531,7 +530,7 @@ class Certificado(models.Model):
                 f"Se otorga el presente certificado a:"
             )
 
-            # Nombre del estudiante
+            
             pdf.setFont("Helvetica-Bold", 18)
             pdf.setFillColor(HexColor("#4444aa"))
             pdf.drawCentredString(
@@ -540,7 +539,7 @@ class Certificado(models.Model):
                 f"{estudiante.first_name} {estudiante.last_name}"
             )
 
-            # Detalles del curso
+            
             pdf.setFont("Helvetica", 14)
             pdf.setFillColor(HexColor("#333333"))
             pdf.drawCentredString(
@@ -549,7 +548,7 @@ class Certificado(models.Model):
                 f"Por haber completado satisfactoriamente el curso:"
             )
 
-            # Título del curso
+           
             pdf.setFont("Helvetica-Bold", 16)
             pdf.setFillColor(HexColor("#4444aa"))
             pdf.drawCentredString(
@@ -558,7 +557,7 @@ class Certificado(models.Model):
                 curso.titulo
             )
 
-            # Fecha de emisión
+            
             pdf.setFont("Helvetica", 12)
             pdf.setFillColor(HexColor("#666666"))
             pdf.drawCentredString(
@@ -567,7 +566,7 @@ class Certificado(models.Model):
                 f"Fecha de emisión: {timezone.now().strftime('%d de %B de %Y')}"
             )
 
-            # Firma (opcional)
+            
             pdf.setFont("Helvetica-Oblique", 12)
             pdf.drawCentredString(
                 width / 2,
@@ -576,11 +575,11 @@ class Certificado(models.Model):
             )
             pdf.drawCentredString(width / 2, height - 360, "Firma Autorizada")
 
-            # Guardar PDF
+            
             pdf.save()
             buffer.seek(0)
 
-            # Crear el certificado
+           
             with transaction.atomic():
                 certificado = cls.objects.create(estudiante=estudiante, curso=curso)
                 certificado.archivoPdf.save(f"certificado_{curso.id}_{estudiante.id}.pdf", File(buffer))
@@ -608,7 +607,7 @@ class Certificado(models.Model):
 class Pregunta(models.Model):
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
     pregunta = models.TextField()
-    opcionesRespuestas = models.JSONField()  # Requiere Django 3.1+
+    opcionesRespuestas = models.JSONField()  
     respuestaCorrecta = models.CharField(max_length=255)
     puntajePregunta = models.IntegerField()
 

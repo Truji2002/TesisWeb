@@ -12,7 +12,6 @@ from rest_framework.response import Response
 import secrets
 from rest_framework.exceptions import ValidationError
 
-
 class PasswordValidationMixin:
     def validate_password(self, value):
         """
@@ -55,7 +54,7 @@ class AdministradorSerializer(PasswordValidationMixin, serializers.ModelSerializ
         """
         try:
             user = Administrador(**validated_data)
-            user.set_password(validated_data['password'])  # Hash de la contraseña
+            user.set_password(validated_data['password']) 
             user.save()
             return user
         except Exception as e:
@@ -89,8 +88,8 @@ class InstructorSerializer(PasswordValidationMixin, serializers.ModelSerializer)
         """
         try:
             user = Instructor(**validated_data)
-            temp_password = user.generar_contraseña_temporal()  # Generar contraseña temporal
-            user.set_password(temp_password)  # Hash de la contraseña temporal
+            temp_password = user.generar_contraseña_temporal()  
+            user.set_password(temp_password)  
             user.save()
             return user
         except Exception as e:
@@ -111,20 +110,15 @@ class RegisterInstructorSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
 							   
         try:
-            # Crear el instructor sin contraseña
+            
             instructor = Instructor(**validated_data)
 
-														 
-														  
-																						 
-																
 
-            # Generar contraseña temporal
             temp_password = secrets.token_urlsafe(10)
-            instructor.set_password(temp_password)  # Hashearla
+            instructor.set_password(temp_password)  
             instructor.save()
 
-            # Enviar la contraseña temporal por correo
+            
             email_service = EmailService(
                 to_email=instructor.email,
                 subject='Bienvenido a la organización',
@@ -175,7 +169,7 @@ class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer)
         """
         try:
             user = Estudiante(**validated_data)
-            user.set_password(validated_data['password'])  # Hash de la contraseña
+            user.set_password(validated_data['password'])  
             user.save()
             return user
         except Exception as e:
@@ -183,7 +177,7 @@ class EstudianteSerializer(PasswordValidationMixin, serializers.ModelSerializer)
 
 
 class LoginResponseSerializer(serializers.ModelSerializer):
-    #tipo_usuario = serializers.SerializerMethodField()
+   
 
     class Meta:
         model = Usuario
@@ -216,7 +210,7 @@ class CursoSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Curso
-        fields = '__all__'  # Incluye todos los campos del modelo más los campos adicionales
+        fields = '__all__'  
 
     def get_has_prueba(self, obj):
         return hasattr(obj, 'prueba')
@@ -234,10 +228,10 @@ class ModuloSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Modulo
-        fields = ['id', 'nombre', 'enlace', 'archivo_url','subcurso','archivo']  # Incluye otros campos relevantes
+        fields = ['id', 'nombre', 'enlace', 'archivo_url','subcurso','archivo']  
 
     def get_archivo_url(self, obj):
-        request = self.context.get('request')  # Asegúrate de pasar el `request` al serializer en la vista
+        request = self.context.get('request') 
         if obj.archivo and hasattr(obj.archivo, 'url'):
             return request.build_absolute_uri(obj.archivo.url)
         return None
@@ -252,7 +246,7 @@ class ModuloSerializer(serializers.ModelSerializer):
 
 
 class ContratoSerializer(serializers.ModelSerializer):
-    # Campos relacionados para mostrar información del instructor y el curso
+    
     instructor_email = serializers.EmailField(source='instructor.email', read_only=True)
     instructor_nombre = serializers.CharField(source='instructor.first_name', read_only=True)
     curso_titulo = serializers.CharField(source='curso.titulo', read_only=True)
@@ -272,9 +266,9 @@ class ContratoSerializer(serializers.ModelSerializer):
             'activo',
         ]
         extra_kwargs = {
-            'codigoOrganizacion': {'read_only': True},  # No permitir la escritura de este campo
-            'instructor': {'write_only': True},  # Permitir solo el ID para escritura
-            'curso': {'write_only': True},  # Permitir solo el ID para escritura
+            'codigoOrganizacion': {'read_only': True},  
+            'instructor': {'write_only': True},  
+            'curso': {'write_only': True}, 
             'activo': {'default': True},
         }
  
@@ -292,8 +286,8 @@ class ContratoSerializer(serializers.ModelSerializer):
         return data
  
     def create(self, validated_data):
-        contrato = Contrato(**validated_data)  # Crear una instancia pero no guardar aún
-        contrato.save()  # Aquí se llama al método save del modelo
+        contrato = Contrato(**validated_data)  
+        contrato.save()  
         return contrato
     
 class ProgresoSerializer(serializers.ModelSerializer):
@@ -325,7 +319,7 @@ class PreguntaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pregunta
         fields = ['id', 'prueba', 'pregunta', 'opcionesRespuestas', 'respuestaCorrecta', 'puntajePregunta']
-        read_only_fields = ['id']  # Removed 'prueba'
+        read_only_fields = ['id'] 
 
     def validate(self, attrs):
         opciones = attrs.get('opcionesRespuestas')
@@ -364,7 +358,7 @@ class PruebaSerializer(serializers.ModelSerializer):
         preguntas_data = validated_data.pop('preguntas', [])
         instance.duracion = validated_data.get('duracion', instance.duracion)
         instance.save()
-        # La gestión de Preguntas se maneja por separado
+        
         return instance
  
 class PreguntaParaPruebaExistenteSerializer(serializers.ModelSerializer):
@@ -387,7 +381,7 @@ class PruebaConPreguntasSerializer(serializers.ModelSerializer):
         fields = ['curso', 'duracion', 'fechaCreacion', 'preguntas']
 
     def validate_curso(self, value):
-        # Verifica si ya existe una prueba para este curso
+        
         if Prueba.objects.filter(curso=value).exists():
             raise ValidationError("Ya existe una prueba asociada a este curso.")
         return value
