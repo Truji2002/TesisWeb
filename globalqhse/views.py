@@ -910,9 +910,6 @@ class ModulosPorSubcursoAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-
-
-
 class DescargarArchivoModuloAPIView(APIView):
     permission_classes = [IsAuthenticated]  
 
@@ -1247,6 +1244,36 @@ class ProgresoViewSet(viewsets.ModelViewSet):
         serializer = ProgresoSerializer(progreso)
 
         return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], url_path='verificar-contrato-activo')
+    def verificar_contrato_activo(self, request):
+        """
+        Verifica si un curso tiene un contrato activo.
+        """
+        curso_id = request.query_params.get('curso_id')
+
+        if not curso_id:
+            return Response(
+                {"error": "El parámetro `curso_id` es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validar si el curso tiene un contrato activo
+        hoy = now().date()
+        contrato_activo = Contrato.objects.filter(
+            curso_id=curso_id,
+            activo=True,
+            fechaInicioCapacitacion__lte=hoy,
+            fechaFinCapacitacion__gte=hoy
+        ).exists()
+
+        return Response(
+            {
+                "curso_id": curso_id,
+                "activo": contrato_activo
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 class EstudiantePruebaViewSet(viewsets.ModelViewSet):
@@ -1353,6 +1380,56 @@ class PruebaViewSet(viewsets.ModelViewSet):
             return Response({"error": "Prueba no encontrada."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @swagger_auto_schema(
+        operation_description="Verifica si un curso tiene una prueba asociada.",
+        manual_parameters=[
+            openapi.Parameter(
+                'curso_id',
+                openapi.IN_QUERY,
+                description="ID del curso para verificar si tiene una prueba asociada.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                "Estado de la prueba para el curso",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        "curso_id": openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del curso"),
+                        "tiene_prueba": openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Indica si el curso tiene una prueba asociada"),
+                    }
+                )
+            ),
+            400: "El parámetro `curso_id` es requerido.",
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='verificar-prueba')
+    def verificar_prueba(self, request):
+        """
+        Verifica si un curso tiene una prueba asociada.
+        """
+        curso_id = request.query_params.get('curso_id')
+
+        if not curso_id:
+            return Response(
+                {"error": "El parámetro `curso_id` es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        
+        tiene_prueba = Prueba.objects.filter(curso_id=curso_id).exists()
+
+        return Response(
+            {
+                "curso_id": int(curso_id),
+                "tiene_prueba": tiene_prueba
+            },
+            status=status.HTTP_200_OK
+        )
+
 class PreguntaViewSet(viewsets.ModelViewSet):
     queryset = Pregunta.objects.all()
     serializer_class = PreguntaSerializer

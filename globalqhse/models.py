@@ -6,11 +6,11 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
 from reportlab.lib.styles import getSampleStyleSheet
 from django.db.models import Q
-
-from reportlab.lib.pagesizes import letter
+import qrcode
+from reportlab.lib.pagesizes import letter,landscape
 from rest_framework.response import Response
 from rest_framework import status
-
+import pytz
 from reportlab.platypus import Paragraph, Frame, Spacer
 from django.core.exceptions import ValidationError
 import random
@@ -23,7 +23,7 @@ import os
 from reportlab.lib.utils import ImageReader
 import io
 from django.utils import timezone
-
+from django.utils.timezone import now
 import logging
 from io import BytesIO
 from reportlab.lib.pagesizes import letter
@@ -487,114 +487,149 @@ class Certificado(models.Model):
 
     @classmethod
     def emitir_certificado(cls, estudiante, curso):
-        """
-        Genera un certificado con diseño mejorado si el estudiante ha completado el curso.
-        """
         try:
-            
+            # Verificamos que el estudiante haya completado el curso.
             progreso = Progreso.objects.filter(estudiante=estudiante, curso=curso, completado=True).first()
             if not progreso:
                 return "El estudiante no ha completado el curso."
 
-           
+            # Verificamos si ya existe un certificado para este estudiante y curso.
             if cls.objects.filter(estudiante=estudiante, curso=curso).exists():
                 return "El certificado ya ha sido emitido."
 
-            
+            # Validamos datos básicos.
             if not estudiante.first_name or not estudiante.last_name:
                 return "Los datos del estudiante son incompletos."
             if not curso.titulo:
                 return "El título del curso no está disponible."
 
-            
+            # Creamos el buffer para construir el PDF.
             buffer = io.BytesIO()
-            pdf = canvas.Canvas(buffer, pagesize=letter)
+            pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
+            width, height = landscape(letter)
 
-           
-            width, height = letter
-
-            
-            pdf.setFillColor(HexColor("#f7f7f7"))
+        
+            pdf.setFillColor(HexColor("#FFFFFF"))
             pdf.rect(0, 0, width, height, fill=1)
 
-            
-            pdf.setFont("Helvetica-Bold", 24)
-            pdf.setFillColor(HexColor("#333333"))
-            pdf.drawCentredString(width / 2, height - 100, "Certificado de Finalización")
+            pdf.setFillColor(HexColor("#2F4798"))  # Azul claro
+            top_wave_1 = pdf.beginPath()
+            top_wave_1.moveTo(0, height)
+            top_wave_1.curveTo(width * 0.3, height - 100, width * 0.7, height - 50, width, height - 80)
+            top_wave_1.lineTo(width, height)
+            top_wave_1.lineTo(0, height)
+            top_wave_1.close()
+            pdf.drawPath(top_wave_1, fill=1, stroke=0)
 
-            
-            pdf.setFont("Helvetica", 14)
-            pdf.drawCentredString(
-                width / 2,
-                height - 140,
-                f"Se otorga el presente certificado a:"
-            )
+            # Onda Superior (capa 2)
+            pdf.setFillColor(HexColor("#1A2E6F"))  # Azul oscuro
+            top_wave_2 = pdf.beginPath()
+            top_wave_2.moveTo(0, height)
+            top_wave_2.curveTo(width * 0.3, height - 50, width * 0.7, height - 80, width, height - 60)
+            top_wave_2.lineTo(width, height)
+            top_wave_2.lineTo(0, height)
+            top_wave_2.close()
+            pdf.drawPath(top_wave_2, fill=1, stroke=0)
 
-            
-            pdf.setFont("Helvetica-Bold", 18)
-            pdf.setFillColor(HexColor("#4444aa"))
-            pdf.drawCentredString(
-                width / 2,
-                height - 180,
-                f"{estudiante.first_name} {estudiante.last_name}"
-            )
+          
+            pdf.setFillColor(HexColor("#C9A66B"))  # Dorado
+            pdf.setFont("Helvetica-Bold", 36)
+            pdf.drawCentredString(width / 2, height - 180, "CERTIFICADO DE RECONOCIMIENTO")
 
-            
-            pdf.setFont("Helvetica", 14)
-            pdf.setFillColor(HexColor("#333333"))
-            pdf.drawCentredString(
-                width / 2,
-                height - 220,
-                f"Por haber completado satisfactoriamente el curso:"
-            )
+            # Onda Inferior (capa 1)
+            pdf.setFillColor(HexColor("#2F4798"))
+            bottom_wave_1 = pdf.beginPath()
+            bottom_wave_1.moveTo(0, 0)
+            bottom_wave_1.curveTo(width * 0.3, 100, width * 0.7, 50, width, 80)
+            bottom_wave_1.lineTo(width, 0)
+            bottom_wave_1.lineTo(0, 0)
+            bottom_wave_1.close()
+            pdf.drawPath(bottom_wave_1, fill=1, stroke=0)
+
+            # Onda Inferior (capa 2)
+            pdf.setFillColor(HexColor("#1A2E6F"))
+            bottom_wave_2 = pdf.beginPath()
+            bottom_wave_2.moveTo(0, 0)
+            bottom_wave_2.curveTo(width * 0.3, 50, width * 0.7, 80, width, 60)
+            bottom_wave_2.lineTo(width, 0)
+            bottom_wave_2.lineTo(0, 0)
+            bottom_wave_2.close()
+            pdf.drawPath(bottom_wave_2, fill=1, stroke=0)
 
            
-            pdf.setFont("Helvetica-Bold", 16)
-            pdf.setFillColor(HexColor("#4444aa"))
-            pdf.drawCentredString(
-                width / 2,
-                height - 260,
-                curso.titulo
-            )
+            pdf.setFillColor(HexColor("#333333"))
+            pdf.setFont("Helvetica", 16)
+            pdf.drawCentredString(width / 2, height - 250, "Otorgado a")
 
-            
-            pdf.setFont("Helvetica", 12)
-            pdf.setFillColor(HexColor("#666666"))
+            # Nombre del estudiante
+            pdf.setFont("Helvetica-Bold", 28)
+            pdf.setFillColor(HexColor("#4444AA"))
             pdf.drawCentredString(
                 width / 2,
                 height - 300,
-                f"Fecha de emisión: {timezone.now().strftime('%d de %B de %Y')}"
+                f"{estudiante.first_name} {estudiante.last_name}"
             )
 
-            
-            pdf.setFont("Helvetica-Oblique", 12)
+            # Explicación
+            pdf.setFont("Helvetica", 16)
+            pdf.setFillColor(HexColor("#333333"))
             pdf.drawCentredString(
                 width / 2,
-                height - 340,
-                "_________________________"
+                height - 350,
+                "Por haber completado satisfactoriamente el siguiente curso:"
             )
-            pdf.drawCentredString(width / 2, height - 360, "Firma Autorizada")
+
+      
+            pdf.setFont("Helvetica-Bold", 20)
+            pdf.setFillColor(HexColor("#C9A66B"))  
+            pdf.drawCentredString(width / 2, height - 400, curso.titulo)
+
+            fecha_actual_utc = now()
 
             
+            zona_horaria_ecuador = pytz.timezone('America/Guayaquil')
+            fecha_actual_ecuador = fecha_actual_utc.astimezone(zona_horaria_ecuador)
+
+            pdf.setFont("Helvetica", 14)
+            pdf.setFillColor(HexColor("#666666"))
+            pdf.drawCentredString(
+                width / 2,
+                height - 450,
+                f"Fecha de emisión: {fecha_actual_ecuador.strftime('%d de %B de %Y')}"
+            )
+
+         
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.setFillColor(HexColor("#333333"))
+            pdf.drawCentredString(width / 2, height - 520, "Firma Autorizada - Global QHSE")
+
+           
             pdf.save()
             buffer.seek(0)
 
-           
+          
             with transaction.atomic():
                 certificado = cls.objects.create(estudiante=estudiante, curso=curso)
-                certificado.archivoPdf.save(f"certificado_{curso.id}_{estudiante.id}.pdf", File(buffer))
+                certificado.archivoPdf.save(
+                    f"certificado_{curso.id}_{estudiante.id}.pdf",
+                    File(buffer)
+                )
 
             return "Certificado emitido exitosamente."
 
         except Exception as e:
             return f"Error al emitir el certificado: {str(e)}"
+ 
     def post(self, request):
         estudiante_id = request.data.get('estudiante_id')
         curso_id = request.data.get('curso_id')
-
+ 
         if not estudiante_id or not curso_id:
-            return Response({"error": "Faltan los parámetros 'estudiante_id' y 'curso_id'."}, status=status.HTTP_400_BAD_REQUEST)
-
+            return Response(
+                {"error": "Faltan los parámetros 'estudiante_id' y 'curso_id'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+ 
         try:
             certificado = Certificado.objects.filter(estudiante_id=estudiante_id, curso_id=curso_id)
             if certificado.exists():
@@ -603,6 +638,7 @@ class Certificado(models.Model):
             return Response({"error": "Certificado no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+ 
 
 class Pregunta(models.Model):
     prueba = models.ForeignKey(Prueba, on_delete=models.CASCADE, related_name='preguntas')
