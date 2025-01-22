@@ -2774,4 +2774,81 @@ class EstudianteModuloViewSet(viewsets.ModelViewSet):
                 {"error": f"Ocurrió un error inesperado: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+    @swagger_auto_schema(
+        operation_description="Verifica si un módulo está completo para un estudiante dado.",
+        manual_parameters=[
+            openapi.Parameter(
+                'estudiante_id',
+                openapi.IN_QUERY,
+                description="ID del estudiante",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+            openapi.Parameter(
+                'modulo_id',
+                openapi.IN_QUERY,
+                description="ID del módulo",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            ),
+        ],
+        responses={
+            200: openapi.Response(
+                "Estado de completado del módulo",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'estudiante_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del estudiante"),
+                        'modulo_id': openapi.Schema(type=openapi.TYPE_INTEGER, description="ID del módulo"),
+                        'completado': openapi.Schema(type=openapi.TYPE_BOOLEAN, description="Estado de completado"),
+                    }
+                )
+            ),
+            400: "Error en los parámetros enviados",
+            404: "No se encontró el registro Estudiante-Modulo para los IDs proporcionados",
+        }
+    )
+    @action(detail=False, methods=['get'], url_path='check-completion')
+    def check_completion(self, request):
+        """
+        Verifica si un módulo está completo para un estudiante dado.
+        """
+        estudiante_id = request.query_params.get('estudiante_id')
+        modulo_id = request.query_params.get('modulo_id')
+
+        if not estudiante_id or not modulo_id:
+            return Response(
+                {"error": "Los parámetros 'estudiante_id' y 'modulo_id' son requeridos."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Convertir a enteros
+            estudiante_id = int(estudiante_id)
+            modulo_id = int(modulo_id)
+
+            # Obtener el registro EstudianteModulo
+            estudiante_modulo = get_object_or_404(
+                EstudianteModulo, estudiante_id=estudiante_id, modulo_id=modulo_id
+            )
+
+            return Response(
+                {
+                    "estudiante_id": estudiante_id,
+                    "modulo_id": modulo_id,
+                    "completado": estudiante_modulo.completado,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except ValueError:
+            return Response(
+                {"error": "Los parámetros 'estudiante_id' y 'modulo_id' deben ser enteros."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Ocurrió un error inesperado: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
  
