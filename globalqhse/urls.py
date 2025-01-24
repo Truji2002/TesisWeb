@@ -4,11 +4,7 @@ from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
 from rest_framework import permissions
 from .views import InstructorCursosTasaFinalizacionAPIView, InstructorGeneralMetricsAPIView, PreguntasPorPruebaAPIView
-
-
-
 from .views import ResponderPruebaAPIView
-
 from .views import UsuarioViewSet, AdministradorViewSet, InstructorViewSet, EstudianteViewSet, LoginView,  RegistroEstudianteAPIView
 from .views import CursoViewSet, SubcursoViewSet, ModuloViewSet,EmpresaViewSet,ModificarInstructorAPIView,RegisterInstructorAPIView
 from . import views
@@ -23,9 +19,6 @@ from .views import DescargarArchivoModuloAPIView,ActualizarEstudiantePruebaAPIVi
 from .views import EmpresasTotalesAPIView,UsuariosTotalesAPIView,CursosTotalesAPIView,ProgresoPromedioAPIView
 from .views import FilteredMetricsAPIView,GeneralMetricsAPIView
 from .views import TasaCertificacionAPIView,TasaAprobacionPruebasAPIView,EstudiantesPorEmpresaAPIView,InstructoresPorEmpresaAPIView,CursosTasaFinalizacionAPIView, VRLoginView,SimulacionesCompletadasAPIView
-
-
-
 
 router = DefaultRouter()
 router.register(r'usuarios', UsuarioViewSet)

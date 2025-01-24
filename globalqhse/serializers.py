@@ -2,13 +2,7 @@ from rest_framework import serializers
 from .models import Usuario, Administrador, Instructor, Estudiante, Curso, Subcurso, Modulo, Empresa,Contrato,Progreso,EstudiantePrueba, Pregunta, Prueba
 from .utils.email import EmailService
 from .models import EstudianteSubcurso, EstudianteModulo,EstudiantePrueba
-
-import random
-import string
-import json
-
 from rest_framework.response import Response
-
 import secrets
 from rest_framework.exceptions import ValidationError
 
@@ -297,9 +291,11 @@ class ProgresoSerializer(serializers.ModelSerializer):
 
 
 class EstudiantePruebaSerializer(serializers.ModelSerializer):
+    estudiante = serializers.CharField(source='estudiante.id', read_only=True) 
+    curso = serializers.CharField(source='prueba.curso.id', read_only=True)     
     class Meta:
         model = EstudiantePrueba
-        fields = ['estaAprobado', 'calificacion']
+        fields = ['estudiante','curso','estaAprobado', 'calificacion']
 		
 		
 class EstudianteSubcursoSerializer(serializers.ModelSerializer):

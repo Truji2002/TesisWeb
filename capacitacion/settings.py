@@ -147,11 +147,14 @@ WSGI_APPLICATION = 'capacitacion.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'CapacitacionesDB',        
+        'USER': 'postgres',          
+        'PASSWORD': '9060',           
+        'HOST': 'localhost',          
+        'PORT': '5432',               
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
@@ -205,7 +208,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 
 
 CORS_ALLOWED_ORIGINS = [
-    'http://localhost:5173',  # Origen del frontend
+    'http://localhost:5173',  
     "http://172.20.10.4:8000",
 ]
 CORS_ALLOW_ALL_ORIGINS = True

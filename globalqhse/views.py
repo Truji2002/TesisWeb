@@ -2283,6 +2283,79 @@ class InstructorCursosTasaFinalizacionAPIView(APIView):
     vs. la de todos los cursos de la misma empresa.
     Recibe como parámetro: ?instructor_id=123
     """
+    @swagger_auto_schema(
+        operation_description="Obtiene la tasa de finalización de los cursos de un instructor específico y los cursos de toda su empresa.",
+        manual_parameters=[
+            openapi.Parameter(
+                'instructor_id',
+                openapi.IN_QUERY,
+                description="ID del instructor cuyos cursos se quieren analizar.",
+                type=openapi.TYPE_INTEGER,
+                required=True
+            )
+        ],
+        responses={
+            200: openapi.Response(
+                "Tasas de finalización obtenidas con éxito",
+                openapi.Schema(
+                    type=openapi.TYPE_OBJECT,
+                    properties={
+                        'cursos_instructor': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'curso_mayor_finalizacion': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'titulo': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'tasa_finalizacion': openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    },
+                                    description="Curso con mayor tasa de finalización del instructor"
+                                ),
+                                'curso_menor_finalizacion': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'titulo': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'tasa_finalizacion': openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    },
+                                    description="Curso con menor tasa de finalización del instructor"
+                                ),
+                            },
+                            description="Tasas de finalización de los cursos del instructor"
+                        ),
+                        'cursos_empresa': openapi.Schema(
+                            type=openapi.TYPE_OBJECT,
+                            properties={
+                                'curso_mayor_finalizacion': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'titulo': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'tasa_finalizacion': openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    },
+                                    description="Curso con mayor tasa de finalización de la empresa"
+                                ),
+                                'curso_menor_finalizacion': openapi.Schema(
+                                    type=openapi.TYPE_OBJECT,
+                                    properties={
+                                        'curso_id': openapi.Schema(type=openapi.TYPE_INTEGER),
+                                        'titulo': openapi.Schema(type=openapi.TYPE_STRING),
+                                        'tasa_finalizacion': openapi.Schema(type=openapi.TYPE_NUMBER),
+                                    },
+                                    description="Curso con menor tasa de finalización de la empresa"
+                                ),
+                            },
+                            description="Tasas de finalización de los cursos de la empresa"
+                        )
+                    }
+                )
+            ),
+            400: "Error: Parámetro instructor_id faltante o inválido",
+            404: "Error: Instructor no encontrado"
+        }
+    )
+
     def get(self, request):
         
         instructor_id = request.query_params.get('instructor_id', None)

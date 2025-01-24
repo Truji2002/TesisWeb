@@ -4,14 +4,11 @@ from django.contrib.auth.models import AbstractUser
 from django.conf import settings
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor
-from reportlab.lib.styles import getSampleStyleSheet
 from django.db.models import Q
-import qrcode
 from reportlab.lib.pagesizes import letter,landscape
 from rest_framework.response import Response
 from rest_framework import status
 import pytz
-from reportlab.platypus import Paragraph, Frame, Spacer
 from django.core.exceptions import ValidationError
 import random
 import string
@@ -20,9 +17,7 @@ from django.db import transaction
 from django.core.files.base import File
 from reportlab.pdfgen import canvas
 import os
-from reportlab.lib.utils import ImageReader
 import io
-from django.utils import timezone
 from django.utils.timezone import now
 import logging
 from io import BytesIO
@@ -88,8 +83,6 @@ class Usuario(AbstractUser):
 
         super().clean()
 
-
-
 class Administrador(Usuario):
     
     cargo = models.CharField(max_length=100, blank=True)
@@ -146,8 +139,6 @@ class Curso(models.Model):
 
     def __str__(self):
         return self.titulo
-
-
 
 class Contrato(models.Model):
     instructor = models.ForeignKey(Instructor, on_delete=models.CASCADE, related_name='cursos_asignados')
@@ -214,9 +205,6 @@ class Subcurso(models.Model):
     def __str__(self):
         return f"{self.nombre} ({self.curso.titulo})"
 
-
-
-
 # Clase Modulo
 class Modulo(models.Model):
     subcurso = models.ForeignKey(Subcurso, on_delete=models.CASCADE, related_name='modulos', null=True)
@@ -231,8 +219,6 @@ class Modulo(models.Model):
 
     def __str__(self):
         return f"{self.nombre}"
-
-
 
 # Clase Prueba
 class Prueba(models.Model):
@@ -264,8 +250,6 @@ class Progreso(models.Model):
         verbose_name_plural = "Progresos"
         unique_together = ('estudiante', 'curso')
    
-        
-
     def __str__(self):
         return f"{self.estudiante.email} - {self.curso.titulo}: {self.porcentajeCompletado}% completado"
     
@@ -488,22 +472,22 @@ class Certificado(models.Model):
     @classmethod
     def emitir_certificado(cls, estudiante, curso):
         try:
-            # Verificamos que el estudiante haya completado el curso.
+            
             progreso = Progreso.objects.filter(estudiante=estudiante, curso=curso, completado=True).first()
             if not progreso:
                 return "El estudiante no ha completado el curso."
 
-            # Verificamos si ya existe un certificado para este estudiante y curso.
+            
             if cls.objects.filter(estudiante=estudiante, curso=curso).exists():
                 return "El certificado ya ha sido emitido."
 
-            # Validamos datos básicos.
+            
             if not estudiante.first_name or not estudiante.last_name:
                 return "Los datos del estudiante son incompletos."
             if not curso.titulo:
                 return "El título del curso no está disponible."
 
-            # Creamos el buffer para construir el PDF.
+           
             buffer = io.BytesIO()
             pdf = canvas.Canvas(buffer, pagesize=landscape(letter))
             width, height = landscape(letter)
@@ -512,7 +496,7 @@ class Certificado(models.Model):
             pdf.setFillColor(HexColor("#FFFFFF"))
             pdf.rect(0, 0, width, height, fill=1)
 
-            pdf.setFillColor(HexColor("#2F4798"))  # Azul claro
+            pdf.setFillColor(HexColor("#2F4798")) 
             top_wave_1 = pdf.beginPath()
             top_wave_1.moveTo(0, height)
             top_wave_1.curveTo(width * 0.3, height - 100, width * 0.7, height - 50, width, height - 80)
@@ -521,8 +505,8 @@ class Certificado(models.Model):
             top_wave_1.close()
             pdf.drawPath(top_wave_1, fill=1, stroke=0)
 
-            # Onda Superior (capa 2)
-            pdf.setFillColor(HexColor("#1A2E6F"))  # Azul oscuro
+            
+            pdf.setFillColor(HexColor("#1A2E6F"))  
             top_wave_2 = pdf.beginPath()
             top_wave_2.moveTo(0, height)
             top_wave_2.curveTo(width * 0.3, height - 50, width * 0.7, height - 80, width, height - 60)
@@ -532,11 +516,11 @@ class Certificado(models.Model):
             pdf.drawPath(top_wave_2, fill=1, stroke=0)
 
           
-            pdf.setFillColor(HexColor("#C9A66B"))  # Dorado
+            pdf.setFillColor(HexColor("#C9A66B")) 
             pdf.setFont("Helvetica-Bold", 36)
             pdf.drawCentredString(width / 2, height - 180, "CERTIFICADO DE RECONOCIMIENTO")
 
-            # Onda Inferior (capa 1)
+            
             pdf.setFillColor(HexColor("#2F4798"))
             bottom_wave_1 = pdf.beginPath()
             bottom_wave_1.moveTo(0, 0)
@@ -546,7 +530,7 @@ class Certificado(models.Model):
             bottom_wave_1.close()
             pdf.drawPath(bottom_wave_1, fill=1, stroke=0)
 
-            # Onda Inferior (capa 2)
+            
             pdf.setFillColor(HexColor("#1A2E6F"))
             bottom_wave_2 = pdf.beginPath()
             bottom_wave_2.moveTo(0, 0)
@@ -561,7 +545,7 @@ class Certificado(models.Model):
             pdf.setFont("Helvetica", 16)
             pdf.drawCentredString(width / 2, height - 250, "Otorgado a")
 
-            # Nombre del estudiante
+          
             pdf.setFont("Helvetica-Bold", 28)
             pdf.setFillColor(HexColor("#4444AA"))
             pdf.drawCentredString(
@@ -570,7 +554,7 @@ class Certificado(models.Model):
                 f"{estudiante.first_name} {estudiante.last_name}"
             )
 
-            # Explicación
+            
             pdf.setFont("Helvetica", 16)
             pdf.setFillColor(HexColor("#333333"))
             pdf.drawCentredString(
